@@ -87,3 +87,40 @@ Después de implementar:
 2. Resumir el comportamiento implementado.
 3. Indicar las validaciones ejecutadas.
 4. Informar errores, limitaciones o pendientes reales.
+
+
+## Seguridad web y datos operativos
+
+- Aplicar mínimo privilegio y denegar el acceso por defecto.
+- Exigir autenticación en endpoints privados y validar autorización en el backend para cada operación y cada objeto.
+- Filtrar proyectos, áreas, trabajadores, tareas y subtareas según rol, áreas autorizadas y participación; no confiar en controles ocultos ni IDs enviados por el cliente.
+- Validar, normalizar y limitar longitud/formato de toda entrada en el servidor.
+- Usar Django ORM o consultas parametrizadas; nunca concatenar SQL con datos del usuario.
+- Evitar XSS: no insertar contenido del usuario como HTML ni usar `dangerouslySetInnerHTML` sin sanitización justificada.
+- No exponer secretos, datos personales innecesarios, trazas internas ni detalles de infraestructura en respuestas o logs.
+- Mantener CORS restringido a orígenes autorizados; no desactivar CSRF ni debilitar autenticación para resolver errores.
+- No almacenar credenciales en el repositorio, frontend, logs o respuestas; mantenerlas en variables de entorno y usar `.env.example` con valores ficticios.
+- Tratar proyectos publicados como información interna; nunca hacerlos accesibles sin autenticación salvo requisito explícito aprobado.
+- Registrar actor y acción en cambios sensibles mediante el mecanismo de auditoría existente, sin copiar contenido confidencial innecesariamente.
+- Probar permisos y aislamiento entre áreas con datos sintéticos; nunca usar datos reales en fixtures o pruebas.
+- No ejecutar migraciones destructivas ni escrituras contra producción o bases compartidas sin autorización explícita y revisión previa.
+
+## Autenticación y autorización
+
+- La autenticación real aún no está implementada.
+- No crear autenticación, JWT, login ni permisos reales salvo que la tarea lo solicite explícitamente.
+- Las funcionalidades actuales pueden usar datos simulados, sin presentar esos datos como seguridad real.
+- Cuando se implemente, utilizar el sistema de usuarios de Django y autenticación mediante JWT.
+- Validar autenticación y permisos siempre en el backend.
+- Aplicar autorización por rol, área y participación en el proyecto.
+- El frontend no debe ser la única capa de protección.
+- No almacenar tokens, contraseñas ni credenciales en el código fuente.
+- Diseñar nuevas funcionalidades para que puedan integrarse posteriormente con autenticación y autorización sin reescrituras importantes.
+
+## Comentarios en el código
+
+- No agregar comentarios de ningún tipo dentro del código fuente: comentarios de línea, bloque, documentación inline, `TODO`, `FIXME` ni código comentado.
+- Todo código nuevo o modificado debe quedar libre de comentarios.
+- El código debe ser comprensible mediante nombres claros, funciones pequeñas y una estructura coherente.
+- Las explicaciones técnicas, decisiones y reglas deben registrarse fuera del código, en `AGENTS.md` o en la documentación correspondiente.
+- No realizar cambios masivos en archivos no relacionados únicamente para eliminar comentarios existentes.
