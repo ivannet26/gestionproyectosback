@@ -105,18 +105,6 @@ Después de implementar:
 - Probar permisos y aislamiento entre áreas con datos sintéticos; nunca usar datos reales en fixtures o pruebas.
 - No ejecutar migraciones destructivas ni escrituras contra producción o bases compartidas sin autorización explícita y revisión previa.
 
-## Autenticación y autorización
-
-- La autenticación real aún no está implementada.
-- No crear autenticación, JWT, login ni permisos reales salvo que la tarea lo solicite explícitamente.
-- Las funcionalidades actuales pueden usar datos simulados, sin presentar esos datos como seguridad real.
-- Cuando se implemente, utilizar el sistema de usuarios de Django y autenticación mediante JWT.
-- Validar autenticación y permisos siempre en el backend.
-- Aplicar autorización por rol, área y participación en el proyecto.
-- El frontend no debe ser la única capa de protección.
-- No almacenar tokens, contraseñas ni credenciales en el código fuente.
-- Diseñar nuevas funcionalidades para que puedan integrarse posteriormente con autenticación y autorización sin reescrituras importantes.
-
 ## Comentarios en el código
 
 - No agregar comentarios de ningún tipo dentro del código fuente: comentarios de línea, bloque, documentación inline, `TODO`, `FIXME` ni código comentado.
