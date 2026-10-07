@@ -62,6 +62,7 @@ class Project(models.Model):
     available = models.BooleanField(default=False, db_column="disponible_por_area")
     worker_edit = models.BooleanField(default=False, db_column="trabajador_edita_tareas")
     worker_state = models.BooleanField(default=False, db_column="trabajador_cambia_estado")
+    worker_create = models.BooleanField(default=False, db_column="trabajador_crea_tareas")
     created_at = models.DateTimeField(default=timezone.now, db_column="creado_en")
     updated_at = models.DateTimeField(default=timezone.now, db_column="actualizado_en")
 

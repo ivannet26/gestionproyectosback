@@ -1,11 +1,12 @@
 import json
 import os
 import unittest
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from importlib import import_module
 from unittest.mock import patch
 
 from django.db import IntegrityError, connection
+from django.db.migrations.loader import MigrationLoader
 from django.test import Client
 from django.utils import timezone
 
@@ -15,6 +16,8 @@ from apps.workers.models import Worker, WorkerArea
 from apps.authentication.tokens import issue_access
 from apps.projects.models import Project, ProjectArea, ProjectMember, ProjectRequirement, ProjectState, ProjectType, Task, TaskDependency, TaskLabel, TaskState, TaskTransition
 from apps.projects.services.tasks import dependency_would_cycle
+from apps.projects.serializers import ProjectCreateSerializer
+from apps.projects.services.projects import create_project
 
 
 class ProjectFlowTests(unittest.TestCase):
@@ -79,15 +82,30 @@ class ProjectFlowTests(unittest.TestCase):
         return getattr(self.client, method)(f"/api/projects/{path}", **kwargs)
 
     def project_payload(self, **changes):
-        return {"name": "Proyecto sintético", "area_ids": [self.area.pk], "mode": "available", **changes}
+        return {
+            "name": "Proyecto sintético", "area_ids": [self.area.pk], "mode": "available",
+            "end_date": str(self.today + timedelta(days=30)), **changes,
+        }
 
     def project(self, **changes):
+        requirements = changes.pop("requirements", [])
+        legacy_permissions = {
+            field: changes.pop(field) for field in ("worker_edit", "worker_state") if field in changes
+        }
         response = self.request("post", data=self.project_payload(**changes), user=self.admin)
         self.assertEqual(response.status_code, 201, response.content)
-        return Project.objects.get(pk=response.json()["id"])
+        project = Project.objects.get(pk=response.json()["id"])
+        for field, value in legacy_permissions.items():
+            setattr(project, field, value)
+        if legacy_permissions:
+            project.save(update_fields=list(legacy_permissions))
+        ProjectRequirement.objects.bulk_create([
+            ProjectRequirement(project=project, **label) for label in requirements
+        ])
+        return project
 
     def assigned_project(self, **changes):
-        return self.project(mode="assigned", worker_ids=[self.worker.worker_id], start_date=str(self.today), end_date=str(self.today + timedelta(days=30)), **changes)
+        return self.project(mode="assigned", worker_ids=[self.worker.worker_id], **changes)
 
     def task_payload(self, **changes):
         return {"name": "Tarea sintética", "state_code": "PENDIENTE", "priority": 3, "due_date": str(self.today + timedelta(days=10)), **changes}
@@ -111,29 +129,31 @@ class ProjectFlowTests(unittest.TestCase):
             with self.subTest(method=method, path=path):
                 self.assertEqual(self.request(method, path, data).status_code, 401)
 
-    def test_available_creation_persists_areas_labels_defaults_without_members_or_dates(self):
-        project = self.project(area_ids=[self.area.pk, self.other_area.pk], requirements=[{"name": "Texto <script>no ejecutable</script>", "kind": "technical"}])
+    def test_available_creation_persists_areas_dates_and_read_only_defaults_without_members(self):
+        project = self.project(area_ids=[self.area.pk, self.other_area.pk])
         self.assertEqual(set(ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)), {self.area.pk, self.other_area.pk})
         self.assertEqual(project.area_id, self.area.pk)
-        self.assertIsNone(project.start_date)
-        self.assertIsNone(project.end_date)
+        self.assertEqual(project.start_date, self.today)
+        self.assertEqual(project.end_date, self.today + timedelta(days=30))
         self.assertFalse(project.worker_edit)
         self.assertFalse(project.worker_state)
+        self.assertFalse(project.worker_create)
         self.assertTrue(project.available)
         self.assertFalse(ProjectMember.objects.filter(project=project).exists())
-        self.assertEqual(ProjectRequirement.objects.get(project=project).name, "Texto <script>no ejecutable</script>")
+        self.assertFalse(ProjectRequirement.objects.filter(project=project).exists())
 
     def test_assigned_creation_is_atomic_and_uses_project_membership_not_global_roles(self):
-        project = self.assigned_project(worker_edit=True)
+        project = self.assigned_project(worker_contribute=True)
         self.assertFalse(project.available)
-        self.assertTrue(project.worker_edit)
-        self.assertFalse(project.worker_state)
+        self.assertFalse(project.worker_edit)
+        self.assertTrue(project.worker_create)
+        self.assertTrue(project.worker_state)
         self.assertEqual(ProjectMember.objects.get(project=project).worker_id, self.worker.worker_id)
         self.assertEqual(self.worker.global_role, "TRABAJADOR")
 
-    def test_creation_rolls_back_all_records_on_requirement_failure(self):
-        with patch("apps.projects.services.projects.ProjectRequirement.objects.bulk_create", side_effect=IntegrityError("synthetic failure")):
-            response = self.request("post", data=self.project_payload(mode="assigned", worker_ids=[self.worker.worker_id], start_date=str(self.today), end_date=str(self.today + timedelta(days=30)), requirements=[{"name": "Requisito", "kind": "technical"}]), user=self.admin)
+    def test_creation_rolls_back_all_records_on_membership_failure(self):
+        with patch("apps.projects.services.projects.ProjectMember.objects.bulk_create", side_effect=IntegrityError("synthetic failure")):
+            response = self.request("post", data=self.project_payload(mode="assigned", worker_ids=[self.worker.worker_id]), user=self.admin)
         self.assertEqual(response.status_code, 409)
         self.assertFalse(Project.objects.exists())
         self.assertFalse(ProjectArea.objects.exists())
@@ -143,10 +163,13 @@ class ProjectFlowTests(unittest.TestCase):
         for changes in (
             {"name": " "}, {"area_ids": []}, {"area_ids": [self.inactive_area.pk]},
             {"area_ids": [self.area.pk, self.area.pk]}, {"area_ids": [999999]},
-            {"mode": "assigned", "worker_ids": [self.worker.worker_id]},
+            {"mode": "assigned", "worker_ids": []},
             {"mode": "available", "worker_ids": [self.worker.worker_id]},
-            {"mode": "assigned", "worker_ids": [self.outsider.worker_id], "start_date": str(self.today), "end_date": str(self.today + timedelta(days=10))},
-            {"start_date": str(self.today), "end_date": str(self.today - timedelta(days=1))},
+            {"mode": "assigned", "worker_ids": [self.outsider.worker_id]},
+            {"end_date": str(self.today - timedelta(days=1))},
+            {"end_date": None},
+            {"start_date": str(self.today)},
+            {"worker_edit": True}, {"worker_state": True},
             {"requirements": [{"name": "Igual", "kind": "technical"}, {"name": "igual", "kind": "technical"}]},
             {"global_role": "ADMINISTRADOR"},
         ):
@@ -156,10 +179,109 @@ class ProjectFlowTests(unittest.TestCase):
                 self.assertFalse(Project.objects.exists())
 
     def test_only_admin_can_create_projects_and_fetch_worker_candidates(self):
-        self.assertEqual(self.request("post", data=self.project_payload(worker_edit=True, worker_state=True), user=self.worker).status_code, 403)
+        self.assertEqual(self.request("post", data=self.project_payload(worker_contribute=True), user=self.worker).status_code, 403)
         self.assertEqual(self.request("get", f"workers/?area_ids={self.area.pk}", user=self.worker).status_code, 403)
         self.assertEqual(self.request("get", "catalogs/", user=self.worker).json()["areas"], [])
         self.assertEqual({area["id"] for area in self.request("get", "catalogs/", user=self.admin).json()["areas"]}, {self.area.pk, self.other_area.pk})
+
+    def test_end_date_is_required_for_both_modes_and_today_is_allowed(self):
+        for mode in ("available", "assigned"):
+            payload = self.project_payload(mode=mode, worker_ids=[self.worker.worker_id] if mode == "assigned" else [])
+            del payload["end_date"]
+            self.assertEqual(self.request("post", data=payload, user=self.admin).status_code, 400)
+        self.assertFalse(Project.objects.exists())
+        project = self.project(end_date=str(self.today))
+        self.assertEqual(project.start_date, project.end_date)
+        self.assertEqual(self.request("get", "catalogs/", user=self.admin).json()["creation_date"], str(self.today))
+
+    def test_server_start_date_uses_lima_when_utc_is_already_next_day(self):
+        instant = datetime(2030, 1, 2, 3, 30, tzinfo=UTC)
+        with timezone.override("America/Lima"), patch("django.utils.timezone.now", return_value=instant):
+            serializer = ProjectCreateSerializer(data=self.project_payload(end_date="2030-01-01"))
+            self.assertTrue(serializer.is_valid(), serializer.errors)
+            project = create_project(self.admin, serializer.validated_data)
+        self.assertEqual(str(project.start_date), "2030-01-01")
+        self.assertEqual(project.start_date, project.end_date)
+
+    def test_date_is_checked_again_at_creation_after_validation(self):
+        serializer = ProjectCreateSerializer(data=self.project_payload(end_date=str(self.today)))
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        with patch("apps.projects.services.projects.timezone.localdate", return_value=self.today + timedelta(days=1)):
+            from rest_framework.exceptions import ValidationError
+            with self.assertRaises(ValidationError):
+                create_project(self.admin, serializer.validated_data)
+        self.assertFalse(Project.objects.exists())
+
+    def test_edition_allows_own_creation_and_state_but_not_other_field_edits(self):
+        project = self.assigned_project(worker_contribute=True)
+        self.assertTrue(self.request("get", f"{project.pk}/", user=self.worker).json()["permissions"]["create_tasks"])
+        response = self.request("post", f"{project.pk}/tasks/", self.task_payload(labels=[{"name": "Propia", "kind": "technical"}]), self.worker)
+        self.assertEqual(response.status_code, 201, response.content)
+        task = Task.objects.get(pk=response.json()["id"])
+        self.assertEqual(task.responsible_id, self.worker.worker_id)
+        self.assertEqual(TaskLabel.objects.get(task=task).name, "Propia")
+        self.assertFalse(ProjectRequirement.objects.filter(project=project).exists())
+        self.assertFalse(response.json()["permissions"]["edit"])
+        self.assertFalse(response.json()["permissions"]["assign"])
+        self.assertEqual(self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"name": "Prohibido", "priority": 1}, self.worker).status_code, 403)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "EN_CURSO"}, self.worker).status_code, 200)
+
+    def test_published_edition_does_not_grant_creation_or_state_without_membership(self):
+        project = self.project(worker_contribute=True)
+        details = self.request("get", f"{project.pk}/", user=self.worker)
+        self.assertEqual(details.status_code, 200)
+        self.assertFalse(details.json()["permissions"]["create_tasks"])
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(), self.worker).status_code, 403)
+        ProjectMember.objects.create(project=project, worker=self.worker.worker)
+        task = self.task(project, responsible_id=self.worker.worker_id)
+        ProjectMember.objects.filter(project=project, worker=self.worker.worker).delete()
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "EN_CURSO"}, self.worker).status_code, 403)
+
+    def test_old_edit_and_state_flags_never_implicitly_grant_task_creation(self):
+        project = self.assigned_project(worker_edit=True, worker_state=True)
+        self.assertFalse(project.worker_create)
+        self.assertFalse(self.request("get", f"{project.pk}/", user=self.worker).json()["permissions"]["create_tasks"])
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(), self.worker).status_code, 403)
+
+    def test_worker_cannot_create_for_others_or_bypass_state_transitions(self):
+        colleague = self.account("colleague", "TRABAJADOR", self.area)
+        project = self.project(mode="assigned", worker_ids=[self.worker.worker_id, colleague.worker_id], worker_contribute=True)
+        for changes, status in (
+            ({"responsible_id": colleague.worker_id}, 403),
+            ({"state_code": "COMPLETADA"}, 400),
+            ({"state_code": "EN_CURSO"}, 400),
+            ({"state_code": "CANCELADA", "reason": "No evita supervisión"}, 400),
+        ):
+            with self.subTest(changes=changes):
+                self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(**changes), self.worker).status_code, status)
+        self.assertFalse(Task.objects.exists())
+        foreign_task = self.task(project, responsible_id=colleague.worker_id)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/{foreign_task.pk}/state/", {"state_code": "EN_CURSO"}, self.worker).status_code, 404)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/{foreign_task.pk}/dependencies/", {"predecessor_id": foreign_task.pk}, self.worker).status_code, 403)
+
+    def test_edition_subtasks_require_own_parent_and_keep_automatic_self_assignment(self):
+        project = self.assigned_project(worker_contribute=True)
+        parent = self.task(project, responsible_id=self.worker.worker_id)
+        response = self.request("post", f"{project.pk}/tasks/", self.task_payload(parent_id=parent.pk), self.worker)
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["responsible_id"], self.worker.worker_id)
+        self.assertEqual(response.json()["parent_id"], parent.pk)
+        self.assertTrue(response.json()["permissions"]["create_child"])
+        unassigned = self.task(project)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(parent_id=unassigned.pk), self.worker).status_code, 403)
+
+    def test_edition_creation_still_requires_authorized_area_active_membership_and_open_project(self):
+        project = self.assigned_project(worker_contribute=True)
+        ProjectMember.objects.create(project=project, worker=self.outsider.worker)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(), self.outsider).status_code, 404)
+        ProjectMember.objects.filter(project=project, worker=self.worker.worker).update(active=False)
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(), self.worker).status_code, 404)
+        ProjectMember.objects.filter(project=project, worker=self.worker.worker).update(active=True)
+        project.state_code = "FINALIZADO"
+        project.save()
+        self.assertFalse(self.request("get", f"{project.pk}/", user=self.worker).json()["permissions"]["create_tasks"])
+        self.assertEqual(self.request("post", f"{project.pk}/tasks/", self.task_payload(), self.worker).status_code, 400)
+        self.assertFalse(Task.objects.exists())
 
     def test_available_project_visibility_requires_authorized_area_and_honors_revocation(self):
         project = self.project()
@@ -399,6 +521,29 @@ class ProjectFlowTests(unittest.TestCase):
 
 
 class ProjectPolicyTests(unittest.TestCase):
+    def test_creation_permission_migration_preserves_old_flags_and_has_guarded_reverse(self):
+        migration = import_module("apps.projects.migrations.0005_project_worker_create")
+        self.assertIn("NOT NULL DEFAULT FALSE", migration.ADD_PERMISSION_SQL)
+        self.assertNotIn("trabajador_edita_tareas", migration.ADD_PERMISSION_SQL)
+        self.assertNotIn("trabajador_cambia_estado", migration.ADD_PERMISSION_SQL)
+        field = MigrationLoader(None).project_state().apps.get_model("proyectos", "Project")._meta.get_field("worker_create")
+        self.assertEqual(field.column, "trabajador_crea_tareas")
+        self.assertFalse(field.default)
+        editor = unittest.mock.MagicMock()
+        editor.connection.vendor = "mysql"
+        cursor = editor.connection.cursor.return_value.__enter__.return_value
+        migration.install(None, editor)
+        cursor.execute.assert_called_once_with(migration.ADD_PERMISSION_SQL)
+        cursor.reset_mock()
+        cursor.fetchone.return_value = (1,)
+        with self.assertRaises(RuntimeError):
+            migration.restore(None, editor)
+        self.assertEqual(cursor.execute.call_count, 1)
+        cursor.reset_mock()
+        cursor.fetchone.return_value = (0,)
+        migration.restore(None, editor)
+        self.assertEqual(cursor.execute.call_args_list[-1].args, (migration.REMOVE_PERMISSION_SQL,))
+
     def test_cycle_detection_does_not_depend_on_order(self):
         self.assertTrue(dependency_would_cycle([(3, 2), (2, 1)], 1, 3))
         self.assertFalse(dependency_would_cycle([(3, 2)], 1, 3))

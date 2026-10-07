@@ -11,7 +11,7 @@ from apps.organization.services.areas import active_area_ids
 from apps.workers.models import Worker
 from apps.workers.services.access import eligible_workers
 from ..models import Project, ProjectArea, ProjectMember, ProjectRequirement, ProjectState, ProjectType
-from .access import require_admin
+from .access import can_create_tasks, require_admin
 from .audit import audit_actor
 
 
@@ -28,8 +28,11 @@ def project_snapshot(project, user, detailed=False):
         "id": project.pk, "name": project.name, "description": project.description or "",
         "start_date": project.start_date, "end_date": project.end_date, "state_code": project.state_code,
         "available": project.available, "areas": list(project_areas(project).values("id", "name")),
-        "worker_edit": project.worker_edit, "worker_state": project.worker_state,
-        "permissions": {"manage": admin and project.state_code not in ("FINALIZADO", "CANCELADO")},
+        "worker_edit": project.worker_edit, "worker_state": project.worker_state, "worker_create": project.worker_create,
+        "permissions": {
+            "manage": admin and project.state_code not in ("FINALIZADO", "CANCELADO"),
+            "create_tasks": can_create_tasks(user, project),
+        },
     }
     if detailed:
         members = ProjectMember.objects.filter(project=project, active=True, worker__active=True)
@@ -46,6 +49,9 @@ def project_snapshot(project, user, detailed=False):
 def create_project(user, data):
     require_admin(user)
     with audit_actor(user), transaction.atomic():
+        start_date = timezone.localdate()
+        if data["end_date"] < start_date:
+            raise ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
         list(Area.objects.select_for_update().filter(pk__in=data["area_ids"]).order_by("pk"))
         areas = active_area_ids(data["area_ids"])
         list(Worker.objects.select_for_update().filter(pk__in=data["worker_ids"]).order_by("pk"))
@@ -57,13 +63,13 @@ def create_project(user, data):
             raise ValidationError({"detail": "El catálogo necesario no está disponible. Revisa las migraciones pendientes"})
         project = Project.objects.create(
             code=f"GM-{uuid4().hex}", name=data["name"], description=data["description"],
-            area_id=data["area_ids"][0], type_code="GENERAL", start_date=data["start_date"], end_date=data["end_date"],
-            available=data["mode"] == "available", worker_edit=data["worker_edit"], worker_state=data["worker_state"],
+            area_id=data["area_ids"][0], type_code="GENERAL", start_date=start_date, end_date=data["end_date"],
+            available=data["mode"] == "available", worker_edit=False,
+            worker_create=data["worker_contribute"], worker_state=data["worker_contribute"],
             created_at=timezone.now(), updated_at=timezone.now(),
         )
         ProjectArea.objects.bulk_create([ProjectArea(project=project, area_id=area_id) for area_id in areas])
         ProjectMember.objects.bulk_create([ProjectMember(project=project, worker=worker) for worker in workers])
-        ProjectRequirement.objects.bulk_create([ProjectRequirement(project=project, **label) for label in data["requirements"]])
     return project
 
 

@@ -1,4 +1,5 @@
 from ..models import ProjectMember, TaskDependency, TaskLabel, TaskTransition
+from .access import can_create_tasks
 from .tasks import has_supervision
 
 
@@ -11,6 +12,7 @@ def task_snapshot(task, project, user):
     can_state = admin or (assigned and member and project.worker_state)
     if project.state_code in ("FINALIZADO", "CANCELADO"):
         can_edit = can_state = False
+    can_create_child = can_create_tasks(user, project) and (admin or assigned)
     transitions = TaskTransition.objects.filter(source=task.state_code)
     if not has_supervision(user, project):
         transitions = transitions.filter(supervision_required=False)
@@ -26,5 +28,5 @@ def task_snapshot(task, project, user):
         "labels": list(TaskLabel.objects.filter(task=task).values("id", "requirement_id", "name", "kind")),
         "dependencies": list(dependencies.values_list("predecessor_id", flat=True)),
         "transitions": list(transitions.values("target", "reason_required")) if can_state else [],
-        "permissions": {"edit": can_edit, "state": can_state, "assign": manageable, "create_child": manageable and task.state_code not in ("COMPLETADA", "CANCELADA"), "dependencies": manageable and not task.parent_id},
+        "permissions": {"edit": can_edit, "state": can_state, "assign": manageable, "create_child": can_create_child and task.state_code not in ("COMPLETADA", "CANCELADA"), "dependencies": manageable and not task.parent_id},
     }

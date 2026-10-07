@@ -1,4 +1,5 @@
 from django.db import DatabaseError, IntegrityError
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -25,6 +26,7 @@ class ProjectApiView(APIView):
 class ProjectCatalogView(ProjectApiView):
     def get(self, request):
         return Response({
+            "creation_date": timezone.localdate(),
             "areas": active_area_options() if request.user.global_role == "ADMINISTRADOR" else [],
             "states": list(TaskState.objects.order_by("code").values("code", "name")),
             "priorities": [{"code": code, "name": name} for code, name in ((1, "Urgente"), (2, "Alta"), (3, "Normal"), (4, "Baja"))],
@@ -68,7 +70,6 @@ class TaskListView(ProjectApiView):
         return Response([task_snapshot(task, project, request.user) for task in tasks_for_user(request.user, project).select_related("responsible").order_by("id")])
 
     def post(self, request, project_id):
-        require_admin(request.user)
         serializer = TaskCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = create_task(request.user, project_id, serializer.validated_data)

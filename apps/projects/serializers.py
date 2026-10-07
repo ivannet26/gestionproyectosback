@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.authentication.serializers import StrictSerializer
@@ -11,26 +12,22 @@ class LabelSerializer(StrictSerializer):
 class ProjectCreateSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
-    start_date = serializers.DateField(required=False, allow_null=True, default=None)
-    end_date = serializers.DateField(required=False, allow_null=True, default=None)
+    end_date = serializers.DateField()
     area_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False, max_length=100)
-    requirements = LabelSerializer(many=True, required=False, default=list, max_length=50)
     mode = serializers.ChoiceField(choices=("available", "assigned"))
     worker_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=200)
-    worker_edit = serializers.BooleanField(default=False)
-    worker_state = serializers.BooleanField(default=False)
+    worker_contribute = serializers.BooleanField(default=False)
 
     def validate(self, attrs):
         for key in ("area_ids", "worker_ids"):
             if len(attrs[key]) != len(set(attrs[key])):
                 raise serializers.ValidationError({key: "No se permiten selecciones duplicadas"})
-        if attrs["mode"] == "assigned" and (not attrs["worker_ids"] or not attrs["start_date"] or not attrs["end_date"]):
-            raise serializers.ValidationError({"detail": "Selecciona trabajadores y ambas fechas para crear con asignados"})
+        if attrs["mode"] == "assigned" and not attrs["worker_ids"]:
+            raise serializers.ValidationError({"worker_ids": "Selecciona al menos un trabajador para crear con asignados"})
         if attrs["mode"] == "available" and attrs["worker_ids"]:
             raise serializers.ValidationError({"worker_ids": "Publicar por áreas no asigna participantes"})
-        if attrs["start_date"] and attrs["end_date"] and attrs["end_date"] < attrs["start_date"]:
+        if attrs["end_date"] < timezone.localdate():
             raise serializers.ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
-        validate_labels(attrs["requirements"])
         return attrs
 
 
