@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 
-from apps.autenticacion.security import IsAdministrator
+from apps.authentication.security import IsAdministrator
 
 from .models import Worker
 from .serializers import WorkerSerializer

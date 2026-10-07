@@ -1,6 +1,6 @@
 from django.db.models import Count, Exists, OuterRef, Q
 
-from apps.autenticacion.models import FINAL_ROLES
+from apps.authentication.models import FINAL_ROLES
 from apps.organization.services.areas import active_area_ids
 from ..models import Worker, WorkerArea
 

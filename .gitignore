@@ -13,3 +13,4 @@ htmlcov/
 staticfiles/
 media/
 .vscode
+.ruff_cache

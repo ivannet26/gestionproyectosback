@@ -39,13 +39,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "apps.autenticacion.apps.AuthenticationConfig",
-    "apps.proyectos.apps.ProjectsConfig",
+    "apps.authentication.apps.AuthenticationConfig",
+    "apps.projects.apps.ProjectsConfig",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "apps.autenticacion.middleware.ExplicitCorsMiddleware",
+    "apps.authentication.middleware.ExplicitCorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -97,7 +97,7 @@ AUTH_USER_MODEL = "autenticacion.User"
 AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.autenticacion.security.AccessTokenAuthentication"
+        "apps.authentication.security.AccessTokenAuthentication"
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "UNAUTHENTICATED_USER": None,

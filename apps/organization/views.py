@@ -2,7 +2,7 @@ from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.autenticacion.security import IsAdministrator
+from apps.authentication.security import IsAdministrator
 from .models import Area, Specialty
 from .serializers import AreaSerializer, SpecialtySerializer
 from .services.areas import active_area_options

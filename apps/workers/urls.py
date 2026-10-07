@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import WorkerViewSet
 
 router = DefaultRouter()
-router.register(r"workers", WorkerViewSet, basename="worker")
+router.register(r"workers", WorkerViewSet)
 
 urlpatterns = [
     path("", include(router.urls)),
