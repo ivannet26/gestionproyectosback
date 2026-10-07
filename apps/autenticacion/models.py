@@ -1,10 +1,6 @@
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
 
-from apps.organization.models import Area
-from apps.workers.models import Worker
-
-
 FINAL_ROLES = ("ADMINISTRADOR", "TRABAJADOR")
 
 
@@ -15,7 +11,7 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser):
     id = models.BigAutoField(primary_key=True)
-    worker = models.OneToOneField(Worker, on_delete=models.DO_NOTHING, db_column="trabajador_id")
+    worker = models.OneToOneField("workers.Worker", on_delete=models.DO_NOTHING, db_column="trabajador_id")
     username = models.CharField(max_length=80, db_column="nombre_usuario", unique=True)
     password = models.CharField(max_length=255, db_column="password_hash")
     is_active = models.BooleanField(db_column="activo")
@@ -113,15 +109,6 @@ class AuthThrottle(models.Model):
 
     class Meta:
         db_table = "auth_throttle"
-
-
-class WorkerArea(models.Model):
-    pk = models.CompositePrimaryKey("worker_id", "area_id")
-    worker = models.ForeignKey(Worker, on_delete=models.CASCADE, db_column="trabajador_id", db_constraint=False)
-    area = models.ForeignKey(Area, on_delete=models.DO_NOTHING, db_column="area_id", db_constraint=False)
-
-    class Meta:
-        db_table = "trabajador_area"
 
 
 class Invitation(models.Model):

@@ -112,3 +112,16 @@ Después de implementar:
 - El código debe ser comprensible mediante nombres claros, funciones pequeñas y una estructura coherente.
 - Las explicaciones técnicas, decisiones y reglas deben registrarse fuera del código, en `AGENTS.md` o en la documentación correspondiente.
 - No realizar cambios masivos en archivos no relacionados únicamente para eliminar comentarios existentes.
+
+## Organización por dominios y entidades
+
+- Cada aplicación debe ser propietaria de los modelos, servicios, validaciones, endpoints, pruebas y migraciones de su dominio.
+- Importa cada entidad desde su aplicación propietaria. No dupliques modelos ni uses otra aplicación como ubicación permanente para entidades ajenas.
+- Mantén las reglas de negocio junto al dominio responsable y evita dependencias circulares entre aplicaciones.
+- Al reorganizar código, conserva los contratos existentes de API y el comportamiento funcional, salvo que la tarea solicite cambiarlos.
+- Si una entidad se mapea a una tabla existente, conserva nombres de tablas y columnas, tipos, claves, restricciones y relaciones, salvo cambio expresamente requerido.
+- No modifiques migraciones ya aplicadas. Las nuevas migraciones deben respetar el grafo existente y distinguir claramente cambios de estado de cambios físicos en la base de datos.
+- Usa migraciones solo de estado cuando el esquema físico ya corresponda exactamente y el cambio sea únicamente de propiedad o estado de modelos en Django. No las uses para ocultar diferencias ni para sustituir la creación o corrección de tablas.
+- Antes de proponer una migración, revisa sus dependencias, operaciones, SQL generado y compatibilidad con el historial existente. Documenta su impacto y las verificaciones pendientes.
+- Mantén `AGENTS.md` como guía permanente de codificación; registra el estado temporal de módulos y migraciones en documentación de revisión.
+- No incluyas comentarios en el código.

@@ -5,8 +5,9 @@ from django.core.exceptions import ValidationError as PasswordError
 from rest_framework import serializers
 
 from apps.organization.models import Area
+from apps.workers.models import Worker
 
-from .models import FINAL_ROLES, Worker
+from .models import FINAL_ROLES
 
 
 class StrictSerializer(serializers.Serializer):

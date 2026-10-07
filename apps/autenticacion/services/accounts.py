@@ -9,13 +9,15 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
-from ..mail import DeliveryError, send_link
 from apps.organization.models import Area
+from apps.workers.models import Worker, WorkerArea
+from apps.workers.services.areas import area_summary, authorized_areas
 
-from ..models import AuthToken, Invitation, Role, User, UserRole, Worker, WorkerArea
+from ..mail import DeliveryError, send_link
+from ..models import AuthToken, Invitation, Role, User, UserRole
 from ..serializers import PasswordSerializer
 from ..tokens import InvalidToken, consume_stored, decode_token, digest_token, inspect_stored, issue_stored
-from .areas import account_eligible, area_summary, authorized_areas
+from .eligibility import account_eligible
 
 
 class InvitationConflict(APIException):

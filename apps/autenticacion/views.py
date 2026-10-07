@@ -13,13 +13,13 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .mail import DeliveryError, send_link
-from apps.organization.models import Area
+from apps.workers.services.areas import area_summary
 
+from .mail import DeliveryError, send_link
 from .models import AuthToken, RecoveryRequest, User
 from .serializers import EmailSerializer, InvitationSerializer, LoginSerializer, TokenSerializer
 from .services.accounts import complete_password, deliver_invitation, link_details, register_account, validate_link_password
-from .services.areas import account_eligible, area_summary
+from .services.eligibility import account_eligible
 from .security import IsAdministrator, check_throttle, clear_throttle, record_failure
 from .tokens import InvalidToken, consume_stored, decode_token, issue_access, issue_stored, next_monday_lima
 
@@ -199,13 +199,6 @@ class ActivationView(PasswordCompletionView):
 
 class ResetView(PasswordCompletionView):
     purpose = "reset"
-
-
-class AdminAreasView(APIView):
-    permission_classes = [IsAdministrator]
-
-    def get(self, request):
-        return Response(list(Area.objects.filter(active=True).order_by("name").values("id", "name")))
 
 
 class AdminAccountsView(APIView):

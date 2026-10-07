@@ -11,8 +11,9 @@ from django.db import connection
 from django.test import SimpleTestCase
 
 from apps.organization.models import Area
+from apps.workers.models import Worker, WorkerArea
 
-from apps.autenticacion.models import MigrationBackup, Role, User, UserRole, Worker, WorkerArea
+from apps.autenticacion.models import MigrationBackup, Role, User, UserRole
 
 
 scope_migration = import_module("apps.autenticacion.migrations.0002_worker_areas_invitations")

@@ -1,9 +1,10 @@
 from django.urls import path
 
+from apps.organization.views import AdminAreasView
+
 from .views import (
     ActivationView,
     AdminAccountsView,
-    AdminAreasView,
     AdminInviteView,
     AdminIssueResetView,
     AdminRecoveryRequestsView,

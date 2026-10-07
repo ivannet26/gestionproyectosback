@@ -22,6 +22,7 @@ class Specialty(models.Model):
 
     class Meta:
         db_table = "especialidad"
+        managed = False
         ordering = ["name"]
 
     def __str__(self):

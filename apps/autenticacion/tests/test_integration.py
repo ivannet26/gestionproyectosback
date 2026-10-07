@@ -11,9 +11,11 @@ from django.utils import timezone
 
 from apps.autenticacion.mail import DeliveryError
 from apps.organization.models import Area
+from apps.workers.models import Worker, WorkerArea
+from apps.workers.services.areas import authorized_areas
 
-from apps.autenticacion.models import AuthThrottle, AuthToken, Invitation, MigrationBackup, RecoveryRequest, Role, User, UserRole, Worker, WorkerArea
-from apps.autenticacion.services.areas import authorized_areas, can_access_project, can_supervise_project
+from apps.autenticacion.models import AuthThrottle, AuthToken, Invitation, MigrationBackup, RecoveryRequest, Role, User, UserRole
+from apps.proyectos.services.access import can_access_project, can_supervise_project
 from apps.autenticacion.tokens import decode_token, digest_token
 
 

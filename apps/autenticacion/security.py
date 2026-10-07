@@ -11,7 +11,7 @@ from rest_framework.permissions import BasePermission
 
 from .models import AuthThrottle, AuthToken, User
 from .tokens import InvalidToken, decode_token, digest_token
-from .services.areas import account_eligible
+from .services.eligibility import account_eligible
 
 
 class AccessTokenAuthentication(BaseAuthentication):

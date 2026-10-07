@@ -18,8 +18,8 @@ class ExplicitCorsMiddleware:
             response["Access-Control-Allow-Origin"] = origin
             response["Access-Control-Allow-Credentials"] = "true"
             response["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-CSRFToken"
-            response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+            response["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
             patch_vary_headers(response, ["Origin"])
-        if request.path.startswith("/api/auth/"):
+        if request.path.startswith(("/api/auth/", "/api/projects/")):
             response["Cache-Control"] = "no-store"
         return response
