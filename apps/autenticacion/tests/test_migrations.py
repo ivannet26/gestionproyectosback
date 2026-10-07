@@ -10,7 +10,9 @@ from django.contrib.auth.hashers import make_password
 from django.db import connection
 from django.test import SimpleTestCase
 
-from apps.autenticacion.models import Area, MigrationBackup, Role, User, UserRole, Worker, WorkerArea
+from apps.organization.models import Area
+
+from apps.autenticacion.models import MigrationBackup, Role, User, UserRole, Worker, WorkerArea
 
 
 scope_migration = import_module("apps.autenticacion.migrations.0002_worker_areas_invitations")

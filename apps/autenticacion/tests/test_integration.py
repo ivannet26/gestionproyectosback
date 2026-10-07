@@ -10,7 +10,9 @@ from django.test import Client, override_settings
 from django.utils import timezone
 
 from apps.autenticacion.mail import DeliveryError
-from apps.autenticacion.models import Area, AuthThrottle, AuthToken, Invitation, MigrationBackup, RecoveryRequest, Role, User, UserRole, Worker, WorkerArea
+from apps.organization.models import Area
+
+from apps.autenticacion.models import AuthThrottle, AuthToken, Invitation, MigrationBackup, RecoveryRequest, Role, User, UserRole, Worker, WorkerArea
 from apps.autenticacion.services.areas import authorized_areas, can_access_project, can_supervise_project
 from apps.autenticacion.tokens import decode_token, digest_token
 

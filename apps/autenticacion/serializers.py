@@ -4,7 +4,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as PasswordError
 from rest_framework import serializers
 
-from .models import Area, FINAL_ROLES, Worker
+from apps.organization.models import Area
+
+from .models import FINAL_ROLES, Worker
 
 
 class StrictSerializer(serializers.Serializer):

@@ -14,7 +14,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .mail import DeliveryError, send_link
-from .models import Area, AuthToken, RecoveryRequest, User
+from apps.organization.models import Area
+
+from .models import AuthToken, RecoveryRequest, User
 from .serializers import EmailSerializer, InvitationSerializer, LoginSerializer, TokenSerializer
 from .services.accounts import complete_password, deliver_invitation, link_details, register_account, validate_link_password
 from .services.areas import account_eligible, area_summary

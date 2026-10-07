@@ -1,4 +1,6 @@
-from ..models import Area, FINAL_ROLES, WorkerArea
+from apps.organization.models import Area
+
+from ..models import FINAL_ROLES, WorkerArea
 
 
 def authorized_areas(worker):

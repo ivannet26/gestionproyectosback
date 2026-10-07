@@ -12,10 +12,17 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
 if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY is required")
 
-ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", FRONTEND_ORIGIN).rstrip("/")
-if not DEBUG and (not FRONTEND_ORIGIN.startswith("https://") or not FRONTEND_URL.startswith("https://")):
+if not DEBUG and (
+    not FRONTEND_ORIGIN.startswith("https://")
+    or not FRONTEND_URL.startswith("https://")
+):
     raise RuntimeError("Production frontend URLs must use HTTPS")
 CSRF_TRUSTED_ORIGINS = [FRONTEND_ORIGIN]
 CSRF_COOKIE_SECURE = not DEBUG
@@ -24,6 +31,8 @@ SESSION_COOKIE_SECURE = not DEBUG
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 INSTALLED_APPS = [
+    "apps.organization",
+    "apps.workers",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -62,7 +71,9 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 if os.environ.get("AUTH_TEST_SQLITE") == "1":
-    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
+    DATABASES = {
+        "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
+    }
 else:
     DATABASES = {
         "default": {
@@ -84,13 +95,20 @@ else:
 AUTH_USER_MODEL = "autenticacion.User"
 AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.autenticacion.security.AccessTokenAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "apps.autenticacion.security.AccessTokenAuthentication"
+    ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "UNAUTHENTICATED_USER": None,
 }
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 12}},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]

@@ -3,13 +3,13 @@ from django.urls import path
 from .views import (
     ActivationView,
     AdminAccountsView,
+    AdminAreasView,
     AdminInviteView,
     AdminIssueResetView,
     AdminRecoveryRequestsView,
-    AdminAreasView,
     AdminResendInvitationView,
-    LinkPreviewView,
     LinkPasswordValidationView,
+    LinkPreviewView,
     LoginView,
     MeView,
     RecoveryRequestView,
@@ -18,7 +18,6 @@ from .views import (
     logout_view,
     refresh_view,
 )
-
 
 urlpatterns = [
     path("csrf/", csrf_view),
@@ -32,11 +31,24 @@ urlpatterns = [
     path("admin/areas/", AdminAreasView.as_view()),
     path("admin/accounts/", AdminAccountsView.as_view()),
     path("admin/invitations/", AdminInviteView.as_view()),
-    path("admin/accounts/<int:account_id>/resend-invitation/", AdminResendInvitationView.as_view()),
+    path(
+        "admin/accounts/<int:account_id>/resend-invitation/",
+        AdminResendInvitationView.as_view(),
+    ),
     path("activate/preview/", LinkPreviewView.as_view(), {"purpose": "activation"}),
-    path("activate/validate-password/", LinkPasswordValidationView.as_view(), {"purpose": "activation"}),
+    path(
+        "activate/validate-password/",
+        LinkPasswordValidationView.as_view(),
+        {"purpose": "activation"},
+    ),
     path("reset/preview/", LinkPreviewView.as_view(), {"purpose": "reset"}),
-    path("reset/validate-password/", LinkPasswordValidationView.as_view(), {"purpose": "reset"}),
+    path(
+        "reset/validate-password/",
+        LinkPasswordValidationView.as_view(),
+        {"purpose": "reset"},
+    ),
     path("admin/recovery-requests/", AdminRecoveryRequestsView.as_view()),
-    path("admin/recovery-requests/<int:request_id>/issue/", AdminIssueResetView.as_view()),
+    path(
+        "admin/recovery-requests/<int:request_id>/issue/", AdminIssueResetView.as_view()
+    ),
 ]

@@ -1,34 +1,11 @@
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.db import models
 
+from apps.organization.models import Area
+from apps.workers.models import Worker
+
 
 FINAL_ROLES = ("ADMINISTRADOR", "TRABAJADOR")
-
-
-class Area(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    code = models.CharField(max_length=30, db_column="codigo", unique=True)
-    name = models.CharField(max_length=120, db_column="nombre", unique=True)
-    active = models.BooleanField(db_column="activa")
-
-    class Meta:
-        db_table = "area"
-        managed = False
-
-
-class Worker(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    area = models.ForeignKey(Area, on_delete=models.DO_NOTHING, db_column="area_id", null=True)
-    all_areas = models.BooleanField(default=False, db_column="todas_las_areas")
-    code = models.CharField(max_length=30, db_column="codigo", unique=True)
-    first_names = models.CharField(max_length=100, db_column="nombres")
-    last_names = models.CharField(max_length=120, db_column="apellidos")
-    email = models.EmailField(max_length=254, db_column="correo", null=True, unique=True)
-    active = models.BooleanField(db_column="activo")
-
-    class Meta:
-        db_table = "trabajador"
-        managed = False
 
 
 class UserManager(BaseUserManager):

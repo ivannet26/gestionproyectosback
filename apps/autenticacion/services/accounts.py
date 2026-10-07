@@ -10,7 +10,9 @@ from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
 from ..mail import DeliveryError, send_link
-from ..models import Area, AuthToken, Invitation, Role, User, UserRole, Worker, WorkerArea
+from apps.organization.models import Area
+
+from ..models import AuthToken, Invitation, Role, User, UserRole, Worker, WorkerArea
 from ..serializers import PasswordSerializer
 from ..tokens import InvalidToken, consume_stored, decode_token, digest_token, inspect_stored, issue_stored
 from .areas import account_eligible, area_summary, authorized_areas
