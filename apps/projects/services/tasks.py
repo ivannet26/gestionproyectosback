@@ -4,7 +4,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 
 from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskState, TaskTransition
 from ..serializers import validate_labels
-from .access import project_for_user, require_admin, require_task_permission, task_for_user
+from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor
 
 
@@ -56,10 +56,19 @@ def save_labels(task, data):
 
 
 def create_task(user, project_id, data):
-    require_admin(user)
     with audit_actor(user), transaction.atomic():
         project = project_for_user(user, project_id, lock=True)
         editable_project(project)
+        require_task_creation(user, project)
+        responsible_id = data["responsible_id"]
+        if user.global_role != "ADMINISTRADOR":
+            if responsible_id not in (None, user.worker_id):
+                raise PermissionDenied("Solo el Administrador puede asignar tareas a otros trabajadores")
+            if data["state_code"] != "PENDIENTE":
+                raise ValidationError(
+                    {"state_code": "Crea la tarea pendiente y usa las transiciones autorizadas para cambiar su estado"}
+                )
+            responsible_id = user.worker_id
         if not TaskState.objects.filter(pk=data["state_code"]).exists():
             raise ValidationError({"state_code": "Estado no válido"})
         if data["state_code"] in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
@@ -69,9 +78,10 @@ def create_task(user, project_id, data):
             parent = Task.objects.filter(project=project, pk=data["parent_id"], archived=False).first()
             if parent is None or parent.state_code in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"parent_id": "La tarea padre no está disponible en este proyecto"})
+            require_task_permission(user, project, parent, "worker_create")
         start_date = parent.start_date if parent else project.start_date or timezone.localdate()
         validate_dates(project, start_date, data["due_date"], parent=parent)
-        validate_responsible(project, data["responsible_id"], data["state_code"])
+        validate_responsible(project, responsible_id, data["state_code"])
         task = Task.objects.create(
             project=project,
             parent=parent,
@@ -81,7 +91,7 @@ def create_task(user, project_id, data):
             priority=data["priority"],
             start_date=start_date,
             due_date=data["due_date"],
-            responsible_id=data["responsible_id"],
+            responsible_id=responsible_id,
             reason=data["reason"] or None,
             progress=100 if data["state_code"] == "COMPLETADA" else 0,
         )

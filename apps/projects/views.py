@@ -1,10 +1,12 @@
 from django.db import DatabaseError, IntegrityError
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.authentication.security import IsAdministrator
 from apps.organization.services.areas import active_area_options
+
 from .models import TaskState
 from .serializers import (
     DependencySerializer,
@@ -34,8 +36,10 @@ class ProjectApiView(APIView):
 
 class ProjectCatalogView(ProjectApiView):
     def get(self, request):
+
         return Response(
             {
+                "creation_date": timezone.localdate(),
                 "areas": active_area_options() if request.user.global_role == "ADMINISTRADOR" else [],
                 "states": list(TaskState.objects.order_by("code").values("code", "name")),
                 "priorities": [
@@ -62,6 +66,7 @@ class ProjectWorkersView(ProjectApiView):
 
 class ProjectListView(ProjectApiView):
     serializer_class = ProjectCreateSerializer
+
     def get(self, request):
         return Response(
             [
@@ -85,6 +90,7 @@ class ProjectDetailView(ProjectApiView):
 
 class TaskListView(ProjectApiView):
     serializer_class = TaskCreateSerializer
+
     def get(self, request, project_id):
         project = project_for_user(request.user, project_id)
         return Response(
@@ -95,7 +101,6 @@ class TaskListView(ProjectApiView):
         )
 
     def post(self, request, project_id):
-        require_admin(request.user)
         serializer = TaskCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = create_task(request.user, project_id, serializer.validated_data)
@@ -104,6 +109,7 @@ class TaskListView(ProjectApiView):
 
 class TaskDetailView(ProjectApiView):
     serializer_class = TaskEditSerializer
+
     def patch(self, request, project_id, task_id):
         serializer = TaskEditSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -113,6 +119,7 @@ class TaskDetailView(ProjectApiView):
 
 class TaskStateView(ProjectApiView):
     serializer_class = TaskStateSerializer
+
     def post(self, request, project_id, task_id):
         serializer = TaskStateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

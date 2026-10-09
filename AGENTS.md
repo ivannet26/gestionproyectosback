@@ -125,3 +125,7 @@ Después de implementar:
 - Antes de proponer una migración, revisa sus dependencias, operaciones, SQL generado y compatibilidad con el historial existente. Documenta su impacto y las verificaciones pendientes.
 - Mantén `AGENTS.md` como guía permanente de codificación; registra el estado temporal de módulos y migraciones en documentación de revisión.
 - No incluyas comentarios en el código.
+
+- Organiza modelos, servicios, vistas y permisos en la aplicación propietaria de cada entidad; evita modelos duplicados para una misma tabla.
+- Conserva las etiquetas históricas de las aplicaciones y las migraciones ya aplicadas aunque el paquete de código tenga un nombre distinto. No reescribas el historial de migraciones para reorganizar carpetas.
+- Aplica permisos por operación y por objeto en el servidor. Cualquier permiso nuevo debe tener un alcance explícito y un valor inicial que no amplíe el acceso de usuarios existentes.

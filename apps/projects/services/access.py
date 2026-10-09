@@ -83,3 +83,25 @@ def require_task_permission(user, project, task, permission):
         raise PermissionDenied("No tienes permiso para modificar esta tarea")
     if not ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True).exists():
         raise PermissionDenied("Se requiere participación activa en el proyecto")
+
+
+def can_create_tasks(user, project):
+    if project.state_code in ("FINALIZADO", "CANCELADO"):
+        return False
+    if user.global_role == "ADMINISTRADOR":
+        return True
+    return bool(
+        user.global_role == "TRABAJADOR"
+        and project.worker_create
+        and ProjectMember.objects.filter(
+            project=project,
+            worker_id=user.worker_id,
+            active=True,
+            worker__active=True,
+        ).exists()
+    )
+
+
+def require_task_creation(user, project):
+    if not can_create_tasks(user, project):
+        raise PermissionDenied("Se requiere permiso de creación y participación activa en el proyecto")
