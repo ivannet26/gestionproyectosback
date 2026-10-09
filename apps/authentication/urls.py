@@ -49,7 +49,5 @@ urlpatterns = [
         {"purpose": "reset"},
     ),
     path("admin/recovery-requests/", AdminRecoveryRequestsView.as_view()),
-    path(
-        "admin/recovery-requests/<int:request_id>/issue/", AdminIssueResetView.as_view()
-    ),
+    path("admin/recovery-requests/<int:request_id>/issue/", AdminIssueResetView.as_view()),
 ]

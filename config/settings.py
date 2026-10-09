@@ -3,7 +3,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -13,16 +12,11 @@ if not SECRET_KEY:
     raise RuntimeError("DJANGO_SECRET_KEY is required")
 
 ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-    if host.strip()
+    host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()
 ]
 FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", FRONTEND_ORIGIN).rstrip("/")
-if not DEBUG and (
-    not FRONTEND_ORIGIN.startswith("https://")
-    or not FRONTEND_URL.startswith("https://")
-):
+if not DEBUG and (not FRONTEND_ORIGIN.startswith("https://") or not FRONTEND_URL.startswith("https://")):
     raise RuntimeError("Production frontend URLs must use HTTPS")
 CSRF_TRUSTED_ORIGINS = [FRONTEND_ORIGIN]
 CSRF_COOKIE_SECURE = not DEBUG
@@ -39,6 +33,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "drf_spectacular",
     "apps.authentication.apps.AuthenticationConfig",
     "apps.projects.apps.ProjectsConfig",
 ]
@@ -72,9 +67,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 if os.environ.get("AUTH_TEST_SQLITE") == "1":
-    DATABASES = {
-        "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
-    }
+    DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}}
 else:
     DATABASES = {
         "default": {
@@ -96,16 +89,13 @@ else:
 AUTH_USER_MODEL = "autenticacion.User"
 AUTHENTICATION_BACKENDS = ["django.contrib.auth.backends.ModelBackend"]
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.authentication.security.AccessTokenAuthentication"
-    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.authentication.security.AccessTokenAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "UNAUTHENTICATED_USER": None,
 }
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
-    },
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
         "OPTIONS": {"min_length": 12},
@@ -120,6 +110,23 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "GM Ingenieros y Consultores API",
+    "DESCRIPTION": "API del sistema de gestión de proyectos de GM Ingenieros y Consultores.",
+    "VERSION": "1.0.0",
+    "SECURITY": [{"BearerAuth": []}],
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+            },
+        },
+    },
+    "SERVE_INCLUDE_SCHEMA": False,
+}
 
 AUTH_ACCESS_MINUTES = int(os.environ.get("AUTH_ACCESS_MINUTES", "15"))
 AUTH_LINK_HOURS = int(os.environ.get("AUTH_LINK_HOURS", "24"))

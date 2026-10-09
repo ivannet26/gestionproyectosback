@@ -41,8 +41,13 @@ class RoleDataMigrationTests(unittest.TestCase):
     def setUp(self):
         self.editor = SimpleNamespace(connection=connection)
         self.area = Area.objects.create(code="SYN", name="Área sintética", active=True)
-        self.catalog = [("ADMINISTRADOR", "Administrador de cuentas"), ("COLABORADOR", "Trabajador"),
-                        ("COORDINADOR", "Coordinador"), ("GERENCIA", "Gerencia"), ("REVISOR", "Revisor")]
+        self.catalog = [
+            ("ADMINISTRADOR", "Administrador de cuentas"),
+            ("COLABORADOR", "Trabajador"),
+            ("COORDINADOR", "Coordinador"),
+            ("GERENCIA", "Gerencia"),
+            ("REVISOR", "Revisor"),
+        ]
         for code, name in self.catalog:
             Role.objects.create(code=code, name=name)
         self.admin = self.account("ADM", "ADMINISTRADOR")
@@ -54,7 +59,14 @@ class RoleDataMigrationTests(unittest.TestCase):
                 cursor.execute(f'DELETE FROM "{model._meta.db_table}"')
 
     def account(self, code, role):
-        worker = Worker.objects.create(area=self.area, code=code, first_names="Sintético", last_names=code, email=f"{code.lower()}@example.com", active=True)
+        worker = Worker.objects.create(
+            area=self.area,
+            code=code,
+            first_names="Sintético",
+            last_names=code,
+            email=f"{code.lower()}@example.com",
+            active=True,
+        )
         user = User.objects.create(worker=worker, username=f"gm_{code}", password=make_password(None), is_active=True)
         UserRole.objects.create(user=user, role_code=role)
         return user
@@ -73,7 +85,10 @@ class RoleDataMigrationTests(unittest.TestCase):
         self.assertTrue(WorkerArea.objects.filter(worker=self.worker.worker, area=self.area).exists())
         roles_migration.restore(apps, self.editor)
         self.assertEqual(set(Role.objects.values_list("code", "name")), set(self.catalog))
-        self.assertEqual(set(UserRole.objects.values_list("user_id", "role_code")), {(self.admin.pk, "ADMINISTRADOR"), (self.worker.pk, "COLABORADOR")})
+        self.assertEqual(
+            set(UserRole.objects.values_list("user_id", "role_code")),
+            {(self.admin.pk, "ADMINISTRADOR"), (self.worker.pk, "COLABORADOR")},
+        )
         self.assertFalse(WorkerArea.objects.exists())
         self.assertFalse(MigrationBackup.objects.exists())
         self.assertEqual(Worker.objects.get(pk=self.worker.worker_id).area_id, self.area.pk)
@@ -151,7 +166,10 @@ class MigrationDefinitionTests(SimpleTestCase):
     def test_final_catalog_constraint_rejects_other_global_codes(self):
         editor = self.mysql_editor()
         roles_migration.enforce_final_catalog(apps, editor)
-        self.assertEqual(editor.execute.call_args.args[0], "ALTER TABLE rol ADD CONSTRAINT ck_rol_global CHECK (codigo IN ('ADMINISTRADOR', 'TRABAJADOR'))")
+        self.assertEqual(
+            editor.execute.call_args.args[0],
+            "ALTER TABLE rol ADD CONSTRAINT ck_rol_global CHECK (codigo IN ('ADMINISTRADOR', 'TRABAJADOR'))",
+        )
 
     def test_supervisor_policy_gives_admin_an_independent_global_branch(self):
         sql = (SQL_DIR / "sp_validar_supervisor.sql").read_text(encoding="utf-8")
@@ -171,7 +189,7 @@ class MigrationDefinitionTests(SimpleTestCase):
         self.assertIn("SELECT (v_administrador=1 OR EXISTS", desired)
         self.assertIn("v_trabajador_area_autorizada", desired)
         unchanged = " IF NOT EXISTS(SELECT 1 FROM transicion_actividad"
-        self.assertEqual(baseline[baseline.index(unchanged):], desired[desired.index(unchanged):])
+        self.assertEqual(baseline[baseline.index(unchanged) :], desired[desired.index(unchanged) :])
         self.assertIn("v_supervision=0 AND NOT(v_responsable<=>v_persona)", desired)
         self.assertNotIn("COORDINADOR", desired)
 

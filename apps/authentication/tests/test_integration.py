@@ -14,7 +14,16 @@ from apps.organization.models import Area
 from apps.workers.models import Worker, WorkerArea
 from apps.workers.services.areas import authorized_areas
 
-from apps.authentication.models import AuthThrottle, AuthToken, Invitation, MigrationBackup, RecoveryRequest, Role, User, UserRole
+from apps.authentication.models import (
+    AuthThrottle,
+    AuthToken,
+    Invitation,
+    MigrationBackup,
+    RecoveryRequest,
+    Role,
+    User,
+    UserRole,
+)
 from apps.projects.services.access import can_access_project, can_supervise_project
 from apps.authentication.tokens import decode_token, digest_token
 
@@ -26,7 +35,19 @@ class AuthenticationFlowTests(unittest.TestCase):
             raise unittest.SkipTest("Integration tests require isolated SQLite")
         cls.password_settings = override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
         cls.password_settings.enable()
-        cls.tables = [Area, Worker, WorkerArea, User, Role, UserRole, AuthThrottle, AuthToken, RecoveryRequest, Invitation, MigrationBackup]
+        cls.tables = [
+            Area,
+            Worker,
+            WorkerArea,
+            User,
+            Role,
+            UserRole,
+            AuthThrottle,
+            AuthToken,
+            RecoveryRequest,
+            Invitation,
+            MigrationBackup,
+        ]
         with connection.schema_editor() as editor:
             for model in cls.tables:
                 editor.create_model(model)
@@ -52,11 +73,15 @@ class AuthenticationFlowTests(unittest.TestCase):
                 cursor.execute(f'DELETE FROM "{model._meta.db_table}"')
 
     def worker(self, code, email):
-        return Worker.objects.create(area=self.area, code=code, first_names="Persona", last_names=code, email=email, active=True)
+        return Worker.objects.create(
+            area=self.area, code=code, first_names="Persona", last_names=code, email=email, active=True
+        )
 
     def account(self, code, email, role, active=True, password="StrongPassword!2026"):
         worker = self.worker(code, email)
-        user = User.objects.create(worker=worker, username=f"gm_{code}", password=make_password(password), is_active=active)
+        user = User.objects.create(
+            worker=worker, username=f"gm_{code}", password=make_password(password), is_active=active
+        )
         UserRole.objects.create(user=user, role_code=role)
         return user
 
@@ -70,8 +95,15 @@ class AuthenticationFlowTests(unittest.TestCase):
         return self.post("/api/auth/login/", {"email": email, "password": password})
 
     def invite_data(self, email="new@example.com", **changes):
-        return {"first_names": "Nombre Sintético", "last_names": "Apellido Prueba", "email": email,
-                "role": "TRABAJADOR", "all_areas": False, "area_ids": [self.area.pk], **changes}
+        return {
+            "first_names": "Nombre Sintético",
+            "last_names": "Apellido Prueba",
+            "email": email,
+            "role": "TRABAJADOR",
+            "all_areas": False,
+            "area_ids": [self.area.pk],
+            **changes,
+        }
 
     def admin_access(self):
         self.account("ADMIN", "admin@example.com", "ADMINISTRADOR")
@@ -89,21 +121,28 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {access}").status_code, 200)
         self.assertEqual(self.post("/api/auth/admin/invitations/", self.invite_data(), access).status_code, 403)
         for path in ("areas", "accounts", "recovery-requests"):
-            self.assertEqual(self.client.get(f"/api/auth/admin/{path}/", HTTP_AUTHORIZATION=f"Bearer {access}").status_code, 403)
+            self.assertEqual(
+                self.client.get(f"/api/auth/admin/{path}/", HTTP_AUTHORIZATION=f"Bearer {access}").status_code, 403
+            )
         self.assertEqual(self.post("/api/auth/admin/accounts/999/resend-invitation/", bearer=access).status_code, 403)
         self.assertEqual(self.post("/api/auth/admin/recovery-requests/999/issue/", bearer=access).status_code, 403)
         old_refresh = self.client.cookies["gm_refresh"].value
         renewed = self.post("/api/auth/refresh/")
         self.assertEqual(renewed.status_code, 200)
         self.assertNotEqual(self.client.cookies["gm_refresh"].value, old_refresh)
-        self.assertEqual(decode_token(old_refresh, "refresh")["exp"], decode_token(self.client.cookies["gm_refresh"].value, "refresh")["exp"])
+        self.assertEqual(
+            decode_token(old_refresh, "refresh")["exp"],
+            decode_token(self.client.cookies["gm_refresh"].value, "refresh")["exp"],
+        )
         self.client.cookies["gm_refresh"] = old_refresh
         self.assertEqual(self.post("/api/auth/refresh/").status_code, 401)
         self.assertEqual(self.login("t01@example.com").status_code, 200)
         latest_access = self.login("t01@example.com").json()["access"]
         self.assertEqual(self.post("/api/auth/logout/").status_code, 200)
         self.assertEqual(self.post("/api/auth/refresh/").status_code, 401)
-        self.assertEqual(self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {latest_access}").status_code, 401)
+        self.assertEqual(
+            self.client.get("/api/auth/me/", HTTP_AUTHORIZATION=f"Bearer {latest_access}").status_code, 401
+        )
 
     def test_inactive_and_unknown_role_cannot_login(self):
         self.account("T02", "t02@example.com", "TRABAJADOR", active=False)
@@ -122,13 +161,47 @@ class AuthenticationFlowTests(unittest.TestCase):
         account = User.objects.get(worker=worker)
         self.assertFalse(account.is_active)
         first_token = send_link.call_args.args[3]
-        self.assertEqual(self.post(f"/api/auth/admin/accounts/{account.pk}/resend-invitation/", bearer=admin_access).status_code, 200)
+        self.assertEqual(
+            self.post(f"/api/auth/admin/accounts/{account.pk}/resend-invitation/", bearer=admin_access).status_code, 200
+        )
         activation_token = send_link.call_args.args[3]
-        self.assertEqual(self.post("/api/auth/activate/", {"token": first_token, "password": "StrongPassword!2026", "password_confirmation": "StrongPassword!2026"}).status_code, 400)
-        self.assertEqual(self.post("/api/auth/activate/", {"token": activation_token, "password": "123", "password_confirmation": "123"}).status_code, 400)
-        activated = self.post("/api/auth/activate/", {"token": activation_token, "password": "StrongPassword!2026", "password_confirmation": "StrongPassword!2026"})
+        self.assertEqual(
+            self.post(
+                "/api/auth/activate/",
+                {
+                    "token": first_token,
+                    "password": "StrongPassword!2026",
+                    "password_confirmation": "StrongPassword!2026",
+                },
+            ).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.post(
+                "/api/auth/activate/", {"token": activation_token, "password": "123", "password_confirmation": "123"}
+            ).status_code,
+            400,
+        )
+        activated = self.post(
+            "/api/auth/activate/",
+            {
+                "token": activation_token,
+                "password": "StrongPassword!2026",
+                "password_confirmation": "StrongPassword!2026",
+            },
+        )
         self.assertEqual(activated.status_code, 200)
-        self.assertEqual(self.post("/api/auth/activate/", {"token": activation_token, "password": "StrongPassword!2026", "password_confirmation": "StrongPassword!2026"}).status_code, 400)
+        self.assertEqual(
+            self.post(
+                "/api/auth/activate/",
+                {
+                    "token": activation_token,
+                    "password": "StrongPassword!2026",
+                    "password_confirmation": "StrongPassword!2026",
+                },
+            ).status_code,
+            400,
+        )
         self.assertEqual(self.login("t04@example.com").status_code, 200)
         worker_refresh = self.client.cookies["gm_refresh"].value
         unknown = self.post("/api/auth/recovery-requests/", {"email": "unknown@example.com"})
@@ -139,9 +212,18 @@ class AuthenticationFlowTests(unittest.TestCase):
         issued = self.post(f"/api/auth/admin/recovery-requests/{pending.pk}/issue/", bearer=admin_access)
         self.assertEqual(issued.status_code, 200)
         reset_token = reset_mail.call_args.args[3]
-        reset = self.post("/api/auth/reset/", {"token": reset_token, "password": "OtherStrong!2026", "password_confirmation": "OtherStrong!2026"})
+        reset = self.post(
+            "/api/auth/reset/",
+            {"token": reset_token, "password": "OtherStrong!2026", "password_confirmation": "OtherStrong!2026"},
+        )
         self.assertEqual(reset.status_code, 200)
-        self.assertEqual(self.post("/api/auth/reset/", {"token": reset_token, "password": "OtherStrong!2026", "password_confirmation": "OtherStrong!2026"}).status_code, 400)
+        self.assertEqual(
+            self.post(
+                "/api/auth/reset/",
+                {"token": reset_token, "password": "OtherStrong!2026", "password_confirmation": "OtherStrong!2026"},
+            ).status_code,
+            400,
+        )
         self.client.cookies["gm_refresh"] = worker_refresh
         self.assertEqual(self.post("/api/auth/refresh/").status_code, 401)
         self.assertEqual(self.login("t04@example.com", "StrongPassword!2026").status_code, 401)
@@ -151,7 +233,9 @@ class AuthenticationFlowTests(unittest.TestCase):
     def test_specific_areas_registration_and_readonly_activation(self, send_link):
         access = self.admin_access()
         second = Area.objects.create(code="AMB", name="Ambiente", active=True)
-        response = self.post("/api/auth/admin/invitations/", self.invite_data(area_ids=[second.pk, self.area.pk]), access)
+        response = self.post(
+            "/api/auth/admin/invitations/", self.invite_data(area_ids=[second.pk, self.area.pk]), access
+        )
         self.assertEqual(response.status_code, 201)
         user = User.objects.select_related("worker").get(pk=response.json()["account_id"])
         self.assertEqual(user.worker.area_id, second.pk)
@@ -167,8 +251,15 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertEqual(preview.json()["email"], "new@example.com")
         self.assertEqual(preview.json()["role"], "TRABAJADOR")
         self.assertEqual(len(preview.json()["areas"]), 2)
-        for field, value in (("email", "changed@example.com"), ("role", "ADMINISTRADOR"), ("area_ids", []), ("first_names", "Changed")):
-            self.assertEqual(self.post("/api/auth/activate/", self.password_data(token, **{field: value})).status_code, 400)
+        for field, value in (
+            ("email", "changed@example.com"),
+            ("role", "ADMINISTRADOR"),
+            ("area_ids", []),
+            ("first_names", "Changed"),
+        ):
+            self.assertEqual(
+                self.post("/api/auth/activate/", self.password_data(token, **{field: value})).status_code, 400
+            )
         user.refresh_from_db()
         self.assertFalse(user.is_active)
         self.assertEqual(self.post("/api/auth/activate/validate-password/", self.password_data(token)).status_code, 200)
@@ -202,10 +293,18 @@ class AuthenticationFlowTests(unittest.TestCase):
         access = self.admin_access()
         inactive = Area.objects.create(code="OFF", name="Inactiva", active=False)
         invalid = [
-            {"area_ids": []}, {"area_ids": [self.area.pk, self.area.pk]}, {"area_ids": [inactive.pk]},
-            {"area_ids": [999999]}, {"all_areas": True}, {"role": "COORDINADOR"},
-            {"role": "COLABORADOR"}, {"role": "GERENCIA"}, {"first_names": " "},
-            {"last_names": " "}, {"email": "bad"}, {"worker_id": 999},
+            {"area_ids": []},
+            {"area_ids": [self.area.pk, self.area.pk]},
+            {"area_ids": [inactive.pk]},
+            {"area_ids": [999999]},
+            {"all_areas": True},
+            {"role": "COORDINADOR"},
+            {"role": "COLABORADOR"},
+            {"role": "GERENCIA"},
+            {"first_names": " "},
+            {"last_names": " "},
+            {"email": "bad"},
+            {"worker_id": 999},
         ]
         for changes in invalid:
             with self.subTest(changes=changes):
@@ -214,7 +313,10 @@ class AuthenticationFlowTests(unittest.TestCase):
                 self.assertEqual(Worker.objects.count(), 1)
                 self.assertEqual(User.objects.count(), 1)
         send_link.assert_not_called()
-        with patch("apps.authentication.services.accounts.UserRole.objects.create", side_effect=IntegrityError("synthetic constraint")):
+        with patch(
+            "apps.authentication.services.accounts.UserRole.objects.create",
+            side_effect=IntegrityError("synthetic constraint"),
+        ):
             with self.assertRaises(IntegrityError):
                 self.post("/api/auth/admin/invitations/", self.invite_data(), access)
         self.assertEqual(Worker.objects.count(), 1)
@@ -229,8 +331,12 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         worker = Worker.objects.get(email=email)
         self.assertNotEqual(worker.user.username, email[:80])
-        self.assertEqual(self.post("/api/auth/admin/invitations/", self.invite_data(email.upper()), access).status_code, 400)
-        self.assertEqual(self.post("/api/auth/activate/", self.password_data(send_link.call_args.args[3])).status_code, 200)
+        self.assertEqual(
+            self.post("/api/auth/admin/invitations/", self.invite_data(email.upper()), access).status_code, 400
+        )
+        self.assertEqual(
+            self.post("/api/auth/activate/", self.password_data(send_link.call_args.args[3])).status_code, 200
+        )
         self.assertEqual(self.login(email.upper()).status_code, 200)
         self.assertEqual(Worker.objects.filter(email=email).count(), 1)
 
@@ -241,9 +347,16 @@ class AuthenticationFlowTests(unittest.TestCase):
         token = send_link.call_args.args[3]
         invalid_passwords = ["short", "password123456", "new@example.com", "Nombre Sintético"]
         for password in invalid_passwords:
-            self.assertEqual(self.post("/api/auth/activate/validate-password/", self.password_data(token, password)).status_code, 400)
+            self.assertEqual(
+                self.post("/api/auth/activate/validate-password/", self.password_data(token, password)).status_code, 400
+            )
             self.assertEqual(self.post("/api/auth/activate/", self.password_data(token, password)).status_code, 400)
-        self.assertEqual(self.post("/api/auth/activate/", self.password_data(token, password_confirmation="Mismatch!2026")).status_code, 400)
+        self.assertEqual(
+            self.post(
+                "/api/auth/activate/", self.password_data(token, password_confirmation="Mismatch!2026")
+            ).status_code,
+            400,
+        )
         Worker.objects.filter(email="new@example.com").update(email="changed@example.com")
         self.assertEqual(self.post("/api/auth/activate/preview/", {"token": token}).status_code, 400)
         self.assertEqual(self.post("/api/auth/activate/", self.password_data(token)).status_code, 400)
@@ -280,14 +393,21 @@ class AuthenticationFlowTests(unittest.TestCase):
         uncertain_token = send_link.call_args.args[3]
         send_link.side_effect = None
         send_link.return_value = "synthetic-accepted-id"
-        self.assertEqual(self.post(f"/api/auth/admin/accounts/{user.pk}/resend-invitation/", bearer=access).status_code, 200)
+        self.assertEqual(
+            self.post(f"/api/auth/admin/accounts/{user.pk}/resend-invitation/", bearer=access).status_code, 200
+        )
         user.invitation.refresh_from_db()
         self.assertEqual(user.invitation.delivery_status, "accepted")
         self.assertEqual(user.invitation.provider_message_id, "synthetic-accepted-id")
         self.assertEqual(User.objects.count(), 2)
         self.assertEqual(Worker.objects.count(), 2)
         self.assertEqual(self.post("/api/auth/activate/preview/", {"token": uncertain_token}).status_code, 400)
-        self.assertEqual(self.post(f"/api/auth/admin/accounts/{user.pk}/resend-invitation/", {"email": "changed@example.com"}, access).status_code, 400)
+        self.assertEqual(
+            self.post(
+                f"/api/auth/admin/accounts/{user.pk}/resend-invitation/", {"email": "changed@example.com"}, access
+            ).status_code,
+            400,
+        )
 
     def test_admin_global_scope_and_worker_membership_assignment_restrictions(self):
         admin = self.account("ADMIN", "admin@example.com", "ADMINISTRADOR")
@@ -336,6 +456,13 @@ class AuthenticationFlowTests(unittest.TestCase):
 
     def test_malformed_and_extra_auth_fields_are_rejected(self):
         for path in ("login", "recovery-requests", "activate", "activate/validate-password", "reset"):
-            response = self.client.post(f"/api/auth/{path}/", data="[]", content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf)
+            response = self.client.post(
+                f"/api/auth/{path}/", data="[]", content_type="application/json", HTTP_X_CSRFTOKEN=self.csrf
+            )
             self.assertEqual(response.status_code, 400)
-        self.assertEqual(self.post("/api/auth/login/", {"email": "worker@example.com", "password": "secret", "role": "ADMINISTRADOR"}).status_code, 400)
+        self.assertEqual(
+            self.post(
+                "/api/auth/login/", {"email": "worker@example.com", "password": "secret", "role": "ADMINISTRADOR"}
+            ).status_code,
+            400,
+        )

@@ -6,7 +6,13 @@ from rest_framework.views import APIView
 from apps.authentication.security import IsAdministrator
 from apps.organization.services.areas import active_area_options
 from .models import TaskState
-from .serializers import DependencySerializer, ProjectCreateSerializer, TaskCreateSerializer, TaskEditSerializer, TaskStateSerializer
+from .serializers import (
+    DependencySerializer,
+    ProjectCreateSerializer,
+    TaskCreateSerializer,
+    TaskEditSerializer,
+    TaskStateSerializer,
+)
 from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
 from .services.presentation import task_snapshot
 from .services.projects import create_project, project_snapshot, worker_candidates
@@ -17,18 +23,27 @@ class ProjectApiView(APIView):
     def handle_exception(self, error):
         if isinstance(error, DatabaseError):
             code = 409 if isinstance(error, IntegrityError) or (error.args and error.args[0] == 1644) else 503
-            message = "La operación incumple una restricción del proyecto" if code == 409 else "El servicio de proyectos no está disponible. Revisa conexión y migraciones pendientes"
+            message = (
+                "La operación incumple una restricción del proyecto"
+                if code == 409
+                else "El servicio de proyectos no está disponible. Revisa conexión y migraciones pendientes"
+            )
             return Response({"detail": message}, status=code)
         return super().handle_exception(error)
 
 
 class ProjectCatalogView(ProjectApiView):
     def get(self, request):
-        return Response({
-            "areas": active_area_options() if request.user.global_role == "ADMINISTRADOR" else [],
-            "states": list(TaskState.objects.order_by("code").values("code", "name")),
-            "priorities": [{"code": code, "name": name} for code, name in ((1, "Urgente"), (2, "Alta"), (3, "Normal"), (4, "Baja"))],
-        })
+        return Response(
+            {
+                "areas": active_area_options() if request.user.global_role == "ADMINISTRADOR" else [],
+                "states": list(TaskState.objects.order_by("code").values("code", "name")),
+                "priorities": [
+                    {"code": code, "name": name}
+                    for code, name in ((1, "Urgente"), (2, "Alta"), (3, "Normal"), (4, "Baja"))
+                ],
+            }
+        )
 
 
 class ProjectWorkersView(ProjectApiView):
@@ -46,8 +61,14 @@ class ProjectWorkersView(ProjectApiView):
 
 
 class ProjectListView(ProjectApiView):
+    serializer_class = ProjectCreateSerializer
     def get(self, request):
-        return Response([project_snapshot(project, request.user) for project in visible_projects(request.user).order_by("-id")[:200]])
+        return Response(
+            [
+                project_snapshot(project, request.user)
+                for project in visible_projects(request.user).order_by("-id")[:200]
+            ]
+        )
 
     def post(self, request):
         require_admin(request.user)
@@ -63,9 +84,15 @@ class ProjectDetailView(ProjectApiView):
 
 
 class TaskListView(ProjectApiView):
+    serializer_class = TaskCreateSerializer
     def get(self, request, project_id):
         project = project_for_user(request.user, project_id)
-        return Response([task_snapshot(task, project, request.user) for task in tasks_for_user(request.user, project).select_related("responsible").order_by("id")])
+        return Response(
+            [
+                task_snapshot(task, project, request.user)
+                for task in tasks_for_user(request.user, project).select_related("responsible").order_by("id")
+            ]
+        )
 
     def post(self, request, project_id):
         require_admin(request.user)
@@ -76,6 +103,7 @@ class TaskListView(ProjectApiView):
 
 
 class TaskDetailView(ProjectApiView):
+    serializer_class = TaskEditSerializer
     def patch(self, request, project_id, task_id):
         serializer = TaskEditSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -84,6 +112,7 @@ class TaskDetailView(ProjectApiView):
 
 
 class TaskStateView(ProjectApiView):
+    serializer_class = TaskStateSerializer
     def post(self, request, project_id, task_id):
         serializer = TaskStateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -93,6 +122,7 @@ class TaskStateView(ProjectApiView):
 
 class TaskDependenciesView(ProjectApiView):
     permission_classes = [IsAdministrator]
+    serializer_class = DependencySerializer
 
     def post(self, request, project_id, task_id):
         serializer = DependencySerializer(data=request.data)

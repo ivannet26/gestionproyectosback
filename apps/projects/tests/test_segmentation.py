@@ -117,15 +117,18 @@ class EntitySegmentationTests(SimpleTestCase):
     def test_reported_applied_history_remains_consistent(self):
         loader = MigrationLoader(None)
         applied = loader.graph.forwards_plan(("proyectos", "0003_project_sql_policy"))
-        self.assertEqual(applied, [
-            ("autenticacion", "0001_initial"),
-            ("autenticacion", "0002_worker_areas_invitations"),
-            ("autenticacion", "0003_final_roles_and_existing_areas"),
-            ("autenticacion", "0004_global_admin_sql_policy"),
-            ("proyectos", "0001_initial"),
-            ("proyectos", "0002_project_schema"),
-            ("proyectos", "0003_project_sql_policy"),
-        ])
+        self.assertEqual(
+            applied,
+            [
+                ("autenticacion", "0001_initial"),
+                ("autenticacion", "0002_worker_areas_invitations"),
+                ("autenticacion", "0003_final_roles_and_existing_areas"),
+                ("autenticacion", "0004_global_admin_sql_policy"),
+                ("proyectos", "0001_initial"),
+                ("proyectos", "0002_project_schema"),
+                ("proyectos", "0003_project_sql_policy"),
+            ],
+        )
         with patch("django.db.migrations.loader.MigrationRecorder") as recorder:
             recorder.return_value.applied_migrations.return_value = dict.fromkeys(applied)
             loader.check_consistent_history(SimpleNamespace(alias="isolated-history"))
@@ -133,12 +136,17 @@ class EntitySegmentationTests(SimpleTestCase):
     def test_area_reference_is_transferred_before_old_model_is_removed(self):
         loader = MigrationLoader(None)
         plan = loader.graph.forwards_plan(("autenticacion", "0007_worker_area_ownership"))
-        pending = [key for key in plan if key not in loader.graph.forwards_plan(("proyectos", "0003_project_sql_policy"))]
-        self.assertEqual(pending, [
-            ("organization", "0001_initial"),
-            ("proyectos", "0004_organization_area_state"),
-            ("autenticacion", "0005_alter_workerarea_area_delete_area"),
-            ("workers", "0001_existing_worker_models"),
-            ("autenticacion", "0006_alter_workerarea_worker_delete_worker"),
-            ("autenticacion", "0007_worker_area_ownership"),
-        ])
+        pending = [
+            key for key in plan if key not in loader.graph.forwards_plan(("proyectos", "0003_project_sql_policy"))
+        ]
+        self.assertEqual(
+            pending,
+            [
+                ("organization", "0001_initial"),
+                ("proyectos", "0004_organization_area_state"),
+                ("autenticacion", "0005_alter_workerarea_area_delete_area"),
+                ("workers", "0001_existing_worker_models"),
+                ("autenticacion", "0006_alter_workerarea_worker_delete_worker"),
+                ("autenticacion", "0007_worker_area_ownership"),
+            ],
+        )

@@ -94,7 +94,9 @@ class RecoveryRequest(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, db_constraint=False)
     requested_at = models.DateTimeField(auto_now_add=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
-    resolved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_recoveries", db_constraint=False)
+    resolved_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolved_recoveries", db_constraint=False
+    )
 
     class Meta:
         db_table = "auth_recovery_request"
@@ -118,7 +120,9 @@ class Invitation(models.Model):
     delivery_status = models.CharField(max_length=16, default="pending")
     provider_message_id = models.CharField(max_length=128, blank=True)
     last_attempt_at = models.DateTimeField(null=True)
-    created_by = models.ForeignKey(User, on_delete=models.DO_NOTHING, related_name="issued_invitations", db_constraint=False)
+    created_by = models.ForeignKey(
+        User, on_delete=models.DO_NOTHING, related_name="issued_invitations", db_constraint=False
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

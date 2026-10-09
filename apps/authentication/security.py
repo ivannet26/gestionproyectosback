@@ -29,7 +29,13 @@ class AccessTokenAuthentication(BaseAuthentication):
             user = User.objects.select_related("worker", "worker__area").get(pk=int(claims["sub"]))
         except (InvalidToken, User.DoesNotExist, ValueError):
             raise AuthenticationFailed("Credenciales no válidas") from None
-        if not AuthToken.objects.filter(user=user, purpose="access", digest=digest_token(header[7:]), consumed_at__isnull=True, expires_at__gt=timezone.now()).exists():
+        if not AuthToken.objects.filter(
+            user=user,
+            purpose="access",
+            digest=digest_token(header[7:]),
+            consumed_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        ).exists():
             raise AuthenticationFailed("Credenciales no válidas")
         if not account_eligible(user):
             raise AuthenticationFailed("Cuenta no autorizada")

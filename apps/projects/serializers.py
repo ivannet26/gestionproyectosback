@@ -24,8 +24,12 @@ class ProjectCreateSerializer(StrictSerializer):
         for key in ("area_ids", "worker_ids"):
             if len(attrs[key]) != len(set(attrs[key])):
                 raise serializers.ValidationError({key: "No se permiten selecciones duplicadas"})
-        if attrs["mode"] == "assigned" and (not attrs["worker_ids"] or not attrs["start_date"] or not attrs["end_date"]):
-            raise serializers.ValidationError({"detail": "Selecciona trabajadores y ambas fechas para crear con asignados"})
+        if attrs["mode"] == "assigned" and (
+            not attrs["worker_ids"] or not attrs["start_date"] or not attrs["end_date"]
+        ):
+            raise serializers.ValidationError(
+                {"detail": "Selecciona trabajadores y ambas fechas para crear con asignados"}
+            )
         if attrs["mode"] == "available" and attrs["worker_ids"]:
             raise serializers.ValidationError({"worker_ids": "Publicar por áreas no asigna participantes"})
         if attrs["start_date"] and attrs["end_date"] and attrs["end_date"] < attrs["start_date"]:

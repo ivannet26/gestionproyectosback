@@ -10,7 +10,14 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from apps.authentication.security import AccessTokenAuthentication, IsAdministrator
 from apps.authentication.models import User
-from apps.authentication.tokens import InvalidToken, consume_stored, decode_token, encode_token, issue_access, next_monday_lima
+from apps.authentication.tokens import (
+    InvalidToken,
+    consume_stored,
+    decode_token,
+    encode_token,
+    issue_access,
+    next_monday_lima,
+)
 from apps.authentication.views import cookie_response, eligible
 
 
@@ -40,10 +47,18 @@ class TokenTests(SimpleTestCase):
 
     def test_stored_token_cannot_be_reused(self):
         token = encode_token(12, "activation", django_timezone.now() + timedelta(hours=1))
-        record = SimpleNamespace(consumed_at=None, expires_at=django_timezone.now() + timedelta(hours=1), user=SimpleNamespace(pk=12), save=Mock())
+        record = SimpleNamespace(
+            consumed_at=None,
+            expires_at=django_timezone.now() + timedelta(hours=1),
+            user=SimpleNamespace(pk=12),
+            save=Mock(),
+        )
         queryset = Mock()
         queryset.select_for_update.return_value.filter.return_value.first.return_value = record
-        with patch("apps.authentication.tokens.AuthToken.objects", queryset), patch("apps.authentication.tokens.transaction.atomic", return_value=nullcontext()):
+        with (
+            patch("apps.authentication.tokens.AuthToken.objects", queryset),
+            patch("apps.authentication.tokens.transaction.atomic", return_value=nullcontext()),
+        ):
             self.assertEqual(consume_stored(token, "activation")[0].pk, 12)
             with self.assertRaises(InvalidToken):
                 consume_stored(token, "activation")
@@ -84,11 +99,19 @@ class PermissionTests(SimpleTestCase):
         self.assertFalse(eligible(user))
 
     def test_access_authentication_denies_inactive_account(self):
-        user = SimpleNamespace(is_active=False, worker=SimpleNamespace(active=True, area=SimpleNamespace(active=True)), global_role="TRABAJADOR")
+        user = SimpleNamespace(
+            is_active=False,
+            worker=SimpleNamespace(active=True, area=SimpleNamespace(active=True)),
+            global_role="TRABAJADOR",
+        )
         queryset = Mock()
         queryset.select_related.return_value.get.return_value = user
         request = SimpleNamespace(headers={"Authorization": "Bearer signed"})
-        with patch("apps.authentication.security.decode_token", return_value={"sub": "12"}), patch("apps.authentication.security.User.objects", queryset), patch("apps.authentication.security.AuthToken.objects") as tokens:
+        with (
+            patch("apps.authentication.security.decode_token", return_value={"sub": "12"}),
+            patch("apps.authentication.security.User.objects", queryset),
+            patch("apps.authentication.security.AuthToken.objects") as tokens,
+        ):
             tokens.filter.return_value.exists.return_value = True
             with self.assertRaises(AuthenticationFailed):
                 AccessTokenAuthentication().authenticate(request)
@@ -107,7 +130,12 @@ class CookieTests(SimpleTestCase):
 
     def test_refresh_and_logout_require_csrf(self):
         client = Client(enforce_csrf_checks=True)
-        self.assertEqual(client.post("/api/auth/login/", data='{"email":"a@b.com","password":"x"}', content_type="application/json").status_code, 403)
+        self.assertEqual(
+            client.post(
+                "/api/auth/login/", data='{"email":"a@b.com","password":"x"}', content_type="application/json"
+            ).status_code,
+            403,
+        )
         self.assertEqual(client.post("/api/auth/refresh/").status_code, 403)
         self.assertEqual(client.post("/api/auth/logout/").status_code, 403)
 

@@ -18,7 +18,9 @@ def validate_responsible(project, worker_id, state_code):
         if state_code in ("EN_CURSO", "EN_REVISION", "COMPLETADA"):
             raise ValidationError({"responsible_id": "Este estado requiere responsable activo del proyecto"})
         return
-    if not ProjectMember.objects.filter(project=project, worker_id=worker_id, active=True, worker__active=True).exists():
+    if not ProjectMember.objects.filter(
+        project=project, worker_id=worker_id, active=True, worker__active=True
+    ).exists():
         raise ValidationError({"responsible_id": "El responsable debe ser participante activo del proyecto"})
 
 
@@ -36,7 +38,10 @@ def validate_dates(project, start_date, due_date, parent=None, task=None):
 def save_labels(task, data):
     if "labels" not in data and "requirement_ids" not in data:
         return
-    ids = data.get("requirement_ids", list(TaskLabel.objects.filter(task=task, requirement__isnull=False).values_list("requirement_id", flat=True)))
+    ids = data.get(
+        "requirement_ids",
+        list(TaskLabel.objects.filter(task=task, requirement__isnull=False).values_list("requirement_id", flat=True)),
+    )
     own = data.get("labels", list(TaskLabel.objects.filter(task=task, requirement__isnull=True).values("name", "kind")))
     requirements = list(ProjectRequirement.objects.filter(project=task.project, pk__in=ids))
     if len(requirements) != len(ids):
@@ -68,10 +73,17 @@ def create_task(user, project_id, data):
         validate_dates(project, start_date, data["due_date"], parent=parent)
         validate_responsible(project, data["responsible_id"], data["state_code"])
         task = Task.objects.create(
-            project=project, parent=parent, phase_id=parent.phase_id if parent else None,
-            name=data["name"], state_code=data["state_code"], priority=data["priority"],
-            start_date=start_date, due_date=data["due_date"], responsible_id=data["responsible_id"],
-            reason=data["reason"] or None, progress=100 if data["state_code"] == "COMPLETADA" else 0,
+            project=project,
+            parent=parent,
+            phase_id=parent.phase_id if parent else None,
+            name=data["name"],
+            state_code=data["state_code"],
+            priority=data["priority"],
+            start_date=start_date,
+            due_date=data["due_date"],
+            responsible_id=data["responsible_id"],
+            reason=data["reason"] or None,
+            progress=100 if data["state_code"] == "COMPLETADA" else 0,
         )
         save_labels(task, data)
     return task
@@ -98,9 +110,15 @@ def edit_task(user, project_id, task_id, data):
 
 
 def has_supervision(user, project):
-    return user.global_role == "ADMINISTRADOR" or ProjectMember.objects.filter(
-        project=project, worker_id=user.worker_id, active=True, project_role__in=("RESPONSABLE", "REVISOR"),
-    ).exists()
+    return (
+        user.global_role == "ADMINISTRADOR"
+        or ProjectMember.objects.filter(
+            project=project,
+            worker_id=user.worker_id,
+            active=True,
+            project_role__in=("RESPONSABLE", "REVISOR"),
+        ).exists()
+    )
 
 
 def validate_transition(user, project, task, target, reason):
@@ -123,9 +141,19 @@ def validate_transition(user, project, task, target, reason):
                 raise ValidationError({"state_code": "Reabre primero las tareas padre"})
             visited.add(parent.pk)
             parent = parent.parent
-    if target in ("EN_CURSO", "EN_REVISION", "COMPLETADA") and TaskDependency.objects.filter(successor=task).exclude(predecessor__state_code="COMPLETADA", predecessor__archived=False).exists():
+    if (
+        target in ("EN_CURSO", "EN_REVISION", "COMPLETADA")
+        and TaskDependency.objects.filter(successor=task)
+        .exclude(predecessor__state_code="COMPLETADA", predecessor__archived=False)
+        .exists()
+    ):
         raise ValidationError({"state_code": "Hay dependencias pendientes"})
-    if task.state_code == "COMPLETADA" and TaskDependency.objects.filter(predecessor=task, successor__archived=False).exclude(successor__state_code__in=("PENDIENTE", "CANCELADA")).exists():
+    if (
+        task.state_code == "COMPLETADA"
+        and TaskDependency.objects.filter(predecessor=task, successor__archived=False)
+        .exclude(successor__state_code__in=("PENDIENTE", "CANCELADA"))
+        .exists()
+    ):
         raise ValidationError({"state_code": "Replanifica primero las tareas sucesoras"})
     descendants = list(Task.objects.filter(project=project, archived=False).values("id", "parent_id", "state_code"))
     pending = [task.pk]
@@ -150,7 +178,9 @@ def change_task_state(user, project_id, task_id, data):
         require_task_permission(user, project, task, "worker_state")
         validate_transition(user, project, task, data["state_code"], data["reason"])
         with audit_actor(user), connection.cursor() as cursor:
-            cursor.callproc("sp_cambiar_estado_actividad", [project.pk, task.pk, data["state_code"], data["reason"] or None])
+            cursor.callproc(
+                "sp_cambiar_estado_actividad", [project.pk, task.pk, data["state_code"], data["reason"] or None]
+            )
             while cursor.nextset():
                 pass
         task.refresh_from_db()

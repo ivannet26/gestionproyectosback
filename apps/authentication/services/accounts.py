@@ -43,13 +43,18 @@ def register_account(data, actor):
             if not data["all_areas"] and len(selected) != len(data["area_ids"]):
                 raise ValidationError({"area_ids": "Hay áreas inexistentes o inactivas"})
             worker = Worker.objects.create(
-                code=f"GM-{uuid4().hex[:26]}", first_names=data["first_names"],
-                last_names=data["last_names"], email=data["email"], active=True,
+                code=f"GM-{uuid4().hex[:26]}",
+                first_names=data["first_names"],
+                last_names=data["last_names"],
+                email=data["email"],
+                active=True,
                 area_id=None if data["all_areas"] else data["area_ids"][0],
                 all_areas=data["all_areas"],
             )
             WorkerArea.objects.bulk_create([WorkerArea(worker=worker, area_id=area_id) for area_id in data["area_ids"]])
-            user = User.objects.create(worker=worker, username=f"gm_{uuid4().hex}", password=make_password(None), is_active=False)
+            user = User.objects.create(
+                worker=worker, username=f"gm_{uuid4().hex}", password=make_password(None), is_active=False
+            )
             UserRole.objects.create(user=user, role_code=data["role"])
             Invitation.objects.create(user=user, created_by=actor, email_digest=email_digest(worker.email))
     except IntegrityError:
@@ -66,9 +71,15 @@ def deliver_invitation(user_id, actor):
             raise ValidationError({"detail": "La cuenta pendiente no está disponible"})
         if not authorized_areas(user.worker).exists():
             raise ValidationError({"detail": "La cuenta no tiene áreas activas disponibles"})
-        invitation, _ = Invitation.objects.get_or_create(user=user, defaults={"created_by": actor, "email_digest": email_digest(user.worker.email)})
+        invitation, _ = Invitation.objects.get_or_create(
+            user=user, defaults={"created_by": actor, "email_digest": email_digest(user.worker.email)}
+        )
         now = timezone.now()
-        if invitation.delivery_status == "sending" and invitation.last_attempt_at and invitation.last_attempt_at > now - timedelta(seconds=60):
+        if (
+            invitation.delivery_status == "sending"
+            and invitation.last_attempt_at
+            and invitation.last_attempt_at > now - timedelta(seconds=60)
+        ):
             raise InvitationConflict
         token = issue_stored(user, "activation", now + timedelta(hours=settings.AUTH_LINK_HOURS), revoke_previous=True)
         record = AuthToken.objects.get(digest=digest_token(token))
@@ -84,8 +95,12 @@ def deliver_invitation(user_id, actor):
         Invitation.objects.filter(pk=invitation.pk, token=record).update(delivery_status=error.delivery_status)
         if error.delivery_status == "failed":
             AuthToken.objects.filter(pk=record.pk).update(consumed_at=timezone.now())
-        raise InvitationDeliveryError({"detail": InvitationDeliveryError.default_detail, "account_id": user.pk}) from None
-    Invitation.objects.filter(pk=invitation.pk, token=record).update(delivery_status="accepted", provider_message_id=message_id)
+        raise InvitationDeliveryError(
+            {"detail": InvitationDeliveryError.default_detail, "account_id": user.pk}
+        ) from None
+    Invitation.objects.filter(pk=invitation.pk, token=record).update(
+        delivery_status="accepted", provider_message_id=message_id
+    )
     return {"detail": "Invitación aceptada por el proveedor de correo", "account_id": user.pk}
 
 
@@ -96,7 +111,11 @@ def link_account(token, purpose):
         raise InvalidToken
     if purpose == "activation":
         invitation = Invitation.objects.filter(user=user, token=record).first()
-        if user.is_active or invitation is None or not hmac.compare_digest(invitation.email_digest, email_digest(user.worker.email)):
+        if (
+            user.is_active
+            or invitation is None
+            or not hmac.compare_digest(invitation.email_digest, email_digest(user.worker.email))
+        ):
             raise InvalidToken
         if not authorized_areas(user.worker).exists():
             raise InvalidToken
@@ -108,8 +127,11 @@ def link_account(token, purpose):
 def link_details(token, purpose):
     user = link_account(token, purpose)
     return {
-        "first_names": user.worker.first_names, "last_names": user.worker.last_names,
-        "email": user.worker.email, "role": user.global_role, **area_summary(user.worker),
+        "first_names": user.worker.first_names,
+        "last_names": user.worker.last_names,
+        "email": user.worker.email,
+        "role": user.global_role,
+        **area_summary(user.worker),
     }
 
 

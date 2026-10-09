@@ -27,12 +27,8 @@ class Worker(models.Model):
 
 class WorkerArea(models.Model):
     pk = models.CompositePrimaryKey("worker_id", "area_id")
-    worker = models.ForeignKey(
-        Worker, on_delete=models.CASCADE, db_column="trabajador_id", db_constraint=False
-    )
-    area = models.ForeignKey(
-        Area, on_delete=models.DO_NOTHING, db_column="area_id", db_constraint=False
-    )
+    worker = models.ForeignKey(Worker, on_delete=models.CASCADE, db_column="trabajador_id", db_constraint=False)
+    area = models.ForeignKey(Area, on_delete=models.DO_NOTHING, db_column="area_id", db_constraint=False)
 
     class Meta:
         db_table = "trabajador_area"

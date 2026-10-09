@@ -16,10 +16,7 @@ def can_access_project(user, area_id, *, is_member, is_assigned):
         return False
     if user.global_role == "ADMINISTRADOR":
         return True
-    return bool(
-        is_member and is_assigned
-        and authorized_areas(user.worker).filter(pk=area_id).exists()
-    )
+    return bool(is_member and is_assigned and authorized_areas(user.worker).filter(pk=area_id).exists())
 
 
 def can_supervise_project(user, area_id, *, is_member, project_role):
@@ -28,7 +25,8 @@ def can_supervise_project(user, area_id, *, is_member, project_role):
     if user.global_role == "ADMINISTRADOR":
         return True
     return bool(
-        is_member and project_role in ("RESPONSABLE", "REVISOR")
+        is_member
+        and project_role in ("RESPONSABLE", "REVISOR")
         and authorized_areas(user.worker).filter(pk=area_id).exists()
     )
 
@@ -42,11 +40,15 @@ def visible_projects(user):
     areas = authorized_areas(user.worker).values_list("pk", flat=True)
     relationships = ProjectArea.objects.filter(project_id=OuterRef("pk"))
     members = ProjectMember.objects.filter(project_id=OuterRef("pk"), worker_id=user.worker_id)
-    return projects.annotate(
-        has_areas=Exists(relationships), matches_area=Exists(relationships.filter(area_id__in=areas)),
-        is_member=Exists(members.filter(active=True)), revoked_member=Exists(members.filter(active=False)),
-    ).filter(Q(matches_area=True) | Q(has_areas=False, area_id__in=areas)).filter(
-        Q(is_member=True) | Q(available=True, confidential=False, revoked_member=False)
+    return (
+        projects.annotate(
+            has_areas=Exists(relationships),
+            matches_area=Exists(relationships.filter(area_id__in=areas)),
+            is_member=Exists(members.filter(active=True)),
+            revoked_member=Exists(members.filter(active=False)),
+        )
+        .filter(Q(matches_area=True) | Q(has_areas=False, area_id__in=areas))
+        .filter(Q(is_member=True) | Q(available=True, confidential=False, revoked_member=False))
     )
 
 

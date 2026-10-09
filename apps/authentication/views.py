@@ -17,10 +17,22 @@ from apps.workers.services.areas import area_summary
 
 from .mail import DeliveryError, send_link
 from .models import AuthToken, RecoveryRequest, User
-from .serializers import EmailSerializer, InvitationSerializer, LoginSerializer, TokenSerializer
-from .services.accounts import complete_password, deliver_invitation, link_details, register_account, validate_link_password
-from .services.eligibility import account_eligible
 from .security import IsAdministrator, check_throttle, clear_throttle, record_failure
+from .serializers import (
+    EmailSerializer,
+    InvitationSerializer,
+    LoginSerializer,
+    PasswordSerializer,
+    TokenSerializer,
+)
+from .services.accounts import (
+    complete_password,
+    deliver_invitation,
+    link_details,
+    register_account,
+    validate_link_password,
+)
+from .services.eligibility import account_eligible
 from .tokens import InvalidToken, consume_stored, decode_token, issue_access, issue_stored, next_monday_lima
 
 
@@ -72,6 +84,7 @@ def csrf_view(request):
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    serializer_class = LoginSerializer
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
@@ -89,6 +102,9 @@ class LoginView(APIView):
                 return Response({"detail": "Credenciales no válidas"}, status=status.HTTP_401_UNAUTHORIZED)
             clear_throttle(request, email, "login")
             expires_at = next_monday_lima()
+            AuthToken.objects.filter(user=user, purpose__in=["access", "refresh"], consumed_at__isnull=True).update(
+                consumed_at=timezone.now()
+            )
             refresh = issue_stored(user, "refresh", expires_at)
             payload = {"access": issue_access(user, expires_at), "user": profile(user)}
         return cookie_response(payload, refresh, expires_at)
@@ -120,7 +136,9 @@ def logout_view(request):
     token = request.COOKIES.get(settings.AUTH_REFRESH_COOKIE, "")
     try:
         user, _ = consume_stored(token, "refresh")
-        AuthToken.objects.filter(user=user, purpose="access", consumed_at__isnull=True).update(consumed_at=timezone.now())
+        AuthToken.objects.filter(user=user, purpose="access", consumed_at__isnull=True).update(
+            consumed_at=timezone.now()
+        )
     except InvalidToken:
         pass
     authorization = request.headers.get("Authorization", "")
@@ -140,6 +158,7 @@ class MeView(APIView):
 class RecoveryRequestView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    serializer_class = EmailSerializer
 
     def post(self, request):
         serializer = EmailSerializer(data=request.data)
@@ -148,8 +167,17 @@ class RecoveryRequestView(APIView):
         check_throttle(request, email, "recovery")
         record_failure(request, email, "recovery")
         with transaction.atomic():
-            user = User.objects.select_related("worker", "worker__area").select_for_update().filter(worker__email__iexact=email).first()
-            if user and eligible(user) and not RecoveryRequest.objects.filter(user=user, resolved_at__isnull=True).exists():
+            user = (
+                User.objects.select_related("worker", "worker__area")
+                .select_for_update()
+                .filter(worker__email__iexact=email)
+                .first()
+            )
+            if (
+                user
+                and eligible(user)
+                and not RecoveryRequest.objects.filter(user=user, resolved_at__isnull=True).exists()
+            ):
                 RecoveryRequest.objects.create(user=user)
         return Response({"detail": "Si la cuenta existe, la solicitud será revisada por un administrador"})
 
@@ -157,6 +185,7 @@ class RecoveryRequestView(APIView):
 class LinkPreviewView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    serializer_class = TokenSerializer
 
     def post(self, request, purpose):
         serializer = TokenSerializer(data=request.data)
@@ -170,6 +199,7 @@ class LinkPreviewView(APIView):
 class LinkPasswordValidationView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    serializer_class = PasswordSerializer
 
     def post(self, request, purpose):
         try:
@@ -182,6 +212,7 @@ class LinkPasswordValidationView(APIView):
 class PasswordCompletionView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+    serializer_class = PasswordSerializer
     purpose = "activation"
 
     def post(self, request):
@@ -189,7 +220,11 @@ class PasswordCompletionView(APIView):
             complete_password(request.data, self.purpose)
         except (InvalidToken, User.DoesNotExist):
             return Response({"detail": "Enlace inválido o vencido"}, status=400)
-        message = "Cuenta activada. Ya puedes iniciar sesión" if self.purpose == "activation" else "Contraseña actualizada. Inicia sesión nuevamente"
+        message = (
+            "Cuenta activada. Ya puedes iniciar sesión"
+            if self.purpose == "activation"
+            else "Contraseña actualizada. Inicia sesión nuevamente"
+        )
         return Response({"detail": message})
 
 
@@ -206,16 +241,25 @@ class AdminAccountsView(APIView):
 
     def get(self, request):
         accounts = User.objects.select_related("worker", "invitation").order_by("-id")[:50]
-        return Response([
-            {"id": user.pk, "name": f"{user.worker.first_names} {user.worker.last_names}",
-             "email": user.worker.email, "role": user.global_role, "active": user.is_active,
-             "delivery_status": user.invitation.delivery_status if hasattr(user, "invitation") else "pending",
-             **area_summary(user.worker)} for user in accounts
-        ])
+        return Response(
+            [
+                {
+                    "id": user.pk,
+                    "name": f"{user.worker.first_names} {user.worker.last_names}",
+                    "email": user.worker.email,
+                    "role": user.global_role,
+                    "active": user.is_active,
+                    "delivery_status": user.invitation.delivery_status if hasattr(user, "invitation") else "pending",
+                    **area_summary(user.worker),
+                }
+                for user in accounts
+            ]
+        )
 
 
 class AdminInviteView(APIView):
     permission_classes = [IsAdministrator]
+    serializer_class = InvitationSerializer
 
     def post(self, request):
         serializer = InvitationSerializer(data=request.data)
@@ -237,8 +281,22 @@ class AdminRecoveryRequestsView(APIView):
     permission_classes = [IsAdministrator]
 
     def get(self, request):
-        requests = RecoveryRequest.objects.filter(resolved_at__isnull=True).select_related("user", "user__worker").order_by("requested_at")[:50]
-        return Response([{"id": entry.pk, "name": f"{entry.user.worker.first_names} {entry.user.worker.last_names}", "email": entry.user.worker.email, "requested_at": entry.requested_at} for entry in requests])
+        requests = (
+            RecoveryRequest.objects.filter(resolved_at__isnull=True)
+            .select_related("user", "user__worker")
+            .order_by("requested_at")[:50]
+        )
+        return Response(
+            [
+                {
+                    "id": entry.pk,
+                    "name": f"{entry.user.worker.first_names} {entry.user.worker.last_names}",
+                    "email": entry.user.worker.email,
+                    "requested_at": entry.requested_at,
+                }
+                for entry in requests
+            ]
+        )
 
 
 class AdminIssueResetView(APIView):
@@ -246,7 +304,12 @@ class AdminIssueResetView(APIView):
 
     def post(self, request, request_id):
         with transaction.atomic():
-            entry = RecoveryRequest.objects.select_related("user", "user__worker", "user__worker__area").select_for_update().filter(pk=request_id, resolved_at__isnull=True).first()
+            entry = (
+                RecoveryRequest.objects.select_related("user", "user__worker", "user__worker__area")
+                .select_for_update()
+                .filter(pk=request_id, resolved_at__isnull=True)
+                .first()
+            )
             if not entry or not eligible(entry.user):
                 return Response({"detail": "Solicitud no disponible"}, status=404)
             expires_at = timezone.now() + timedelta(minutes=settings.AUTH_RESET_MINUTES)

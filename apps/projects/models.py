@@ -107,8 +107,12 @@ class Task(models.Model):
 class TaskDependency(models.Model):
     pk = models.CompositePrimaryKey("project_id", "predecessor_id", "successor_id")
     project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_column="proyecto_id")
-    predecessor = models.ForeignKey(Task, related_name="outgoing_dependencies", on_delete=models.DO_NOTHING, db_column="predecesora_id")
-    successor = models.ForeignKey(Task, related_name="incoming_dependencies", on_delete=models.DO_NOTHING, db_column="sucesora_id")
+    predecessor = models.ForeignKey(
+        Task, related_name="outgoing_dependencies", on_delete=models.DO_NOTHING, db_column="predecesora_id"
+    )
+    successor = models.ForeignKey(
+        Task, related_name="incoming_dependencies", on_delete=models.DO_NOTHING, db_column="sucesora_id"
+    )
 
     class Meta:
         managed = False
@@ -136,7 +140,9 @@ class ProjectRequirement(models.Model):
 
 class TaskLabel(models.Model):
     task = models.ForeignKey(Task, on_delete=models.DO_NOTHING, db_constraint=False, db_column="actividad_id")
-    requirement = models.ForeignKey(ProjectRequirement, null=True, on_delete=models.DO_NOTHING, db_column="requisito_id")
+    requirement = models.ForeignKey(
+        ProjectRequirement, null=True, on_delete=models.DO_NOTHING, db_column="requisito_id"
+    )
     name = models.CharField(max_length=120, db_column="nombre")
     kind = models.CharField(max_length=20, db_column="clase")
 

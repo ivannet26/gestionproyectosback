@@ -21,8 +21,19 @@ def send_link(email, name, purpose, token):
     subject = "Activa tu cuenta GM" if purpose == "activation" else "Restablece tu contraseña GM"
     url = f"{settings.FRONTEND_URL}/{path}#token={token}"
     message = f"Hola {name},\n\nUsa este enlace para {'activar tu cuenta' if purpose == 'activation' else 'restablecer tu contraseña'}:\n{url}\n\nSi no solicitaste esto, ignora este mensaje."
-    payload = json.dumps({"from": settings.RESEND_FROM_EMAIL, "to": [email], "subject": subject, "text": message}).encode()
-    request = Request("https://api.resend.com/emails", data=payload, headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}", "Content-Type": "application/json", "Idempotency-Key": digest_token(token)}, method="POST")
+    payload = json.dumps(
+        {"from": settings.RESEND_FROM_EMAIL, "to": [email], "subject": subject, "text": message}
+    ).encode()
+    request = Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+            "Idempotency-Key": digest_token(token),
+        },
+        method="POST",
+    )
     try:
         with urlopen(request, timeout=10) as response:
             if response.status not in (200, 201, 202):

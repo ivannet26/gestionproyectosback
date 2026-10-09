@@ -25,10 +25,16 @@ def project_areas(project):
 def project_snapshot(project, user, detailed=False):
     admin = user.global_role == "ADMINISTRADOR"
     result = {
-        "id": project.pk, "name": project.name, "description": project.description or "",
-        "start_date": project.start_date, "end_date": project.end_date, "state_code": project.state_code,
-        "available": project.available, "areas": list(project_areas(project).values("id", "name")),
-        "worker_edit": project.worker_edit, "worker_state": project.worker_state,
+        "id": project.pk,
+        "name": project.name,
+        "description": project.description or "",
+        "start_date": project.start_date,
+        "end_date": project.end_date,
+        "state_code": project.state_code,
+        "available": project.available,
+        "areas": list(project_areas(project).values("id", "name")),
+        "worker_edit": project.worker_edit,
+        "worker_state": project.worker_state,
         "permissions": {"manage": admin and project.state_code not in ("FINALIZADO", "CANCELADO")},
     }
     if detailed:
@@ -53,17 +59,32 @@ def create_project(user, data):
         workers = list(eligible_workers(areas).filter(pk__in=data["worker_ids"]))
         if len(workers) != len(data["worker_ids"]):
             raise ValidationError({"worker_ids": "Hay trabajadores no elegibles para las áreas seleccionadas"})
-        if not ProjectType.objects.filter(pk="GENERAL").exists() or not ProjectState.objects.filter(pk="PLANIFICADO", terminal=False).exists():
-            raise ValidationError({"detail": "El catálogo necesario no está disponible. Revisa las migraciones pendientes"})
+        if (
+            not ProjectType.objects.filter(pk="GENERAL").exists()
+            or not ProjectState.objects.filter(pk="PLANIFICADO", terminal=False).exists()
+        ):
+            raise ValidationError(
+                {"detail": "El catálogo necesario no está disponible. Revisa las migraciones pendientes"}
+            )
         project = Project.objects.create(
-            code=f"GM-{uuid4().hex}", name=data["name"], description=data["description"],
-            area_id=data["area_ids"][0], type_code="GENERAL", start_date=data["start_date"], end_date=data["end_date"],
-            available=data["mode"] == "available", worker_edit=data["worker_edit"], worker_state=data["worker_state"],
-            created_at=timezone.now(), updated_at=timezone.now(),
+            code=f"GM-{uuid4().hex}",
+            name=data["name"],
+            description=data["description"],
+            area_id=data["area_ids"][0],
+            type_code="GENERAL",
+            start_date=data["start_date"],
+            end_date=data["end_date"],
+            available=data["mode"] == "available",
+            worker_edit=data["worker_edit"],
+            worker_state=data["worker_state"],
+            created_at=timezone.now(),
+            updated_at=timezone.now(),
         )
         ProjectArea.objects.bulk_create([ProjectArea(project=project, area_id=area_id) for area_id in areas])
         ProjectMember.objects.bulk_create([ProjectMember(project=project, worker=worker) for worker in workers])
-        ProjectRequirement.objects.bulk_create([ProjectRequirement(project=project, **label) for label in data["requirements"]])
+        ProjectRequirement.objects.bulk_create(
+            [ProjectRequirement(project=project, **label) for label in data["requirements"]]
+        )
     return project
 
 
@@ -71,6 +92,8 @@ def worker_candidates(area_ids, search):
     workers = eligible_workers(area_ids, search).order_by("last_names", "first_names")[:100]
     result = []
     for worker in workers:
-        related = ProjectMember.objects.filter(worker=worker, active=True, project__archived=False).aggregate(total=Count("project_id", distinct=True))["total"]
+        related = ProjectMember.objects.filter(worker=worker, active=True, project__archived=False).aggregate(
+            total=Count("project_id", distinct=True)
+        )["total"]
         result.append({"id": worker.pk, "name": f"{worker.first_names} {worker.last_names}", "project_count": related})
     return result

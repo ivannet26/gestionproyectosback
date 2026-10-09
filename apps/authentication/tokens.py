@@ -18,7 +18,11 @@ class InvalidToken(Exception):
 
 
 def _segment(value):
-    return base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":"), sort_keys=True).encode()).rstrip(b"=").decode()
+    return (
+        base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":"), sort_keys=True).encode())
+        .rstrip(b"=")
+        .decode()
+    )
 
 
 def _decode_segment(value):
@@ -26,13 +30,25 @@ def _decode_segment(value):
 
 
 def _signature(content):
-    return base64.urlsafe_b64encode(hmac.new(settings.AUTH_JWT_KEY.encode(), content.encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+    return (
+        base64.urlsafe_b64encode(hmac.new(settings.AUTH_JWT_KEY.encode(), content.encode(), hashlib.sha256).digest())
+        .rstrip(b"=")
+        .decode()
+    )
 
 
 def encode_token(user_id, purpose, expires_at):
     now = timezone.now()
     header = _segment({"alg": "HS256", "typ": "JWT"})
-    payload = _segment({"sub": str(user_id), "purpose": purpose, "iat": int(now.timestamp()), "exp": int(expires_at.timestamp()), "jti": secrets.token_urlsafe(24)})
+    payload = _segment(
+        {
+            "sub": str(user_id),
+            "purpose": purpose,
+            "iat": int(now.timestamp()),
+            "exp": int(expires_at.timestamp()),
+            "jti": secrets.token_urlsafe(24),
+        }
+    )
     content = f"{header}.{payload}"
     return f"{content}.{_signature(content)}"
 
@@ -78,7 +94,9 @@ def issue_access(user, session_expires_at):
 
 def issue_stored(user, purpose, expires_at, revoke_previous=False):
     if revoke_previous:
-        AuthToken.objects.filter(user=user, purpose=purpose, consumed_at__isnull=True).update(consumed_at=timezone.now())
+        AuthToken.objects.filter(user=user, purpose=purpose, consumed_at__isnull=True).update(
+            consumed_at=timezone.now()
+        )
     token = encode_token(user.pk, purpose, expires_at)
     AuthToken.objects.create(user=user, purpose=purpose, digest=digest_token(token), expires_at=expires_at)
     return token
@@ -87,7 +105,11 @@ def issue_stored(user, purpose, expires_at, revoke_previous=False):
 def consume_stored(token, purpose):
     claims = decode_token(token, purpose)
     with transaction.atomic():
-        record = AuthToken.objects.select_for_update().filter(digest=digest_token(token), purpose=purpose, user_id=int(claims["sub"])).first()
+        record = (
+            AuthToken.objects.select_for_update()
+            .filter(digest=digest_token(token), purpose=purpose, user_id=int(claims["sub"]))
+            .first()
+        )
         if record is None or record.consumed_at is not None or record.expires_at <= timezone.now():
             raise InvalidToken
         record.consumed_at = timezone.now()
@@ -97,10 +119,17 @@ def consume_stored(token, purpose):
 
 def inspect_stored(token, purpose):
     claims = decode_token(token, purpose)
-    record = AuthToken.objects.select_related("user", "user__worker").filter(
-        digest=digest_token(token), purpose=purpose, user_id=int(claims["sub"]),
-        consumed_at__isnull=True, expires_at__gt=timezone.now(),
-    ).first()
+    record = (
+        AuthToken.objects.select_related("user", "user__worker")
+        .filter(
+            digest=digest_token(token),
+            purpose=purpose,
+            user_id=int(claims["sub"]),
+            consumed_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        )
+        .first()
+    )
     if record is None:
         raise InvalidToken
     return record

@@ -7,14 +7,18 @@ from django.test import SimpleTestCase, override_settings
 from apps.authentication.mail import DeliveryError, send_link
 
 
-@override_settings(RESEND_API_KEY="synthetic-api-key", RESEND_FROM_EMAIL="accounts@example.com", FRONTEND_URL="http://localhost:5173")
+@override_settings(
+    RESEND_API_KEY="synthetic-api-key", RESEND_FROM_EMAIL="accounts@example.com", FRONTEND_URL="http://localhost:5173"
+)
 class MailProviderTests(SimpleTestCase):
     @patch("apps.authentication.mail.urlopen")
     def test_success_requires_provider_message_identifier(self, urlopen):
         response = MagicMock(status=200)
         response.read.return_value = json.dumps({"id": "synthetic-message-id"}).encode()
         urlopen.return_value.__enter__.return_value = response
-        self.assertEqual(send_link("worker@example.com", "Sintético", "activation", "synthetic-link-token"), "synthetic-message-id")
+        self.assertEqual(
+            send_link("worker@example.com", "Sintético", "activation", "synthetic-link-token"), "synthetic-message-id"
+        )
         request = urlopen.call_args.args[0]
         self.assertIn("/activar#token=", json.loads(request.data)["text"])
         self.assertTrue(request.has_header("Idempotency-key"))
