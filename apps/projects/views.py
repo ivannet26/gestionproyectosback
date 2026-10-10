@@ -7,10 +7,10 @@ from rest_framework.views import APIView
 from apps.authentication.security import IsAdministrator
 from apps.organization.services.areas import active_area_options
 
-from .models import TaskState
 from .serializers import (
     DependencySerializer,
     ProjectCreateSerializer,
+    ProjectTaskConfigurationSerializer,
     TaskCreateSerializer,
     TaskEditSerializer,
     TaskStateSerializer,
@@ -19,6 +19,7 @@ from .services.access import project_for_user, require_admin, tasks_for_user, vi
 from .services.presentation import task_snapshot
 from .services.projects import create_project, project_snapshot, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
+from .services.statuses import catalog_states, configure_task_states, status_configuration
 
 
 class ProjectApiView(APIView):
@@ -41,7 +42,7 @@ class ProjectCatalogView(ProjectApiView):
             {
                 "creation_date": timezone.localdate(),
                 "areas": active_area_options() if request.user.global_role == "ADMINISTRADOR" else [],
-                "states": list(TaskState.objects.order_by("code").values("code", "name")),
+                "states": catalog_states(),
                 "priorities": [
                     {"code": code, "name": name}
                     for code, name in ((1, "Urgente"), (2, "Alta"), (3, "Normal"), (4, "Baja"))
@@ -105,6 +106,20 @@ class TaskListView(ProjectApiView):
         serializer.is_valid(raise_exception=True)
         task = create_task(request.user, project_id, serializer.validated_data)
         return Response(task_snapshot(task, task.project, request.user), status=201)
+
+
+class ProjectTaskStatesView(ProjectApiView):
+    serializer_class = ProjectTaskConfigurationSerializer
+
+    def get(self, request, project_id):
+        project = project_for_user(request.user, project_id)
+        return Response(status_configuration(project, request.user))
+
+    def patch(self, request, project_id):
+        require_admin(request.user)
+        serializer = ProjectTaskConfigurationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(configure_task_states(request.user, project_id, serializer.validated_data))
 
 
 class TaskDetailView(ProjectApiView):

@@ -89,6 +89,7 @@ class Task(models.Model):
     phase_id = models.PositiveBigIntegerField(null=True, db_column="fase_id")
     parent = models.ForeignKey("self", null=True, on_delete=models.DO_NOTHING, db_column="padre_id")
     name = models.CharField(max_length=180, db_column="nombre")
+    description = models.TextField(null=True, blank=True, db_column="descripcion")
     responsible = models.ForeignKey(Worker, null=True, on_delete=models.DO_NOTHING, db_column="responsable_id")
     state_code = models.CharField(max_length=20, db_column="estado_codigo")
     priority = models.PositiveSmallIntegerField(default=3, db_column="prioridad")
@@ -137,6 +138,22 @@ class ProjectRequirement(models.Model):
     class Meta:
         db_table = "proyecto_requisito"
         constraints = [models.UniqueConstraint(fields=["project", "name", "kind"], name="uq_proyecto_requisito")]
+
+
+class ProjectTaskStatus(models.Model):
+    pk = models.CompositePrimaryKey("project_id", "code")
+    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
+    code = models.CharField(max_length=20, db_column="estado_codigo")
+    name = models.CharField(max_length=70, db_column="nombre")
+    position = models.PositiveSmallIntegerField(db_column="orden")
+
+    class Meta:
+        db_table = "proyecto_estado_actividad"
+        ordering = ["position", "code"]
+        constraints = [
+            models.UniqueConstraint(fields=["project", "name"], name="uq_proyecto_estado_nombre"),
+            models.UniqueConstraint(fields=["project", "position"], name="uq_proyecto_estado_orden"),
+        ]
 
 
 class TaskLabel(models.Model):

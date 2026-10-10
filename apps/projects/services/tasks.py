@@ -2,10 +2,12 @@ from django.db import connection, transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskState, TaskTransition
+from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskTransition
 from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor
+from .statuses import require_configured_state
+from .projects import eligible_project_workers
 
 
 def editable_project(project):
@@ -19,7 +21,7 @@ def validate_responsible(project, worker_id, state_code):
             raise ValidationError({"responsible_id": "Este estado requiere responsable activo del proyecto"})
         return
     if not ProjectMember.objects.filter(
-        project=project, worker_id=worker_id, active=True, worker__active=True
+        project=project, worker_id=worker_id, active=True, worker__in=eligible_project_workers(project)
     ).exists():
         raise ValidationError({"responsible_id": "El responsable debe ser participante activo del proyecto"})
 
@@ -69,8 +71,7 @@ def create_task(user, project_id, data):
                     {"state_code": "Crea la tarea pendiente y usa las transiciones autorizadas para cambiar su estado"}
                 )
             responsible_id = user.worker_id
-        if not TaskState.objects.filter(pk=data["state_code"]).exists():
-            raise ValidationError({"state_code": "Estado no válido"})
+        require_configured_state(project, data["state_code"])
         if data["state_code"] in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
             raise ValidationError({"reason": "Indica un motivo para este estado"})
         parent = None
@@ -87,6 +88,7 @@ def create_task(user, project_id, data):
             parent=parent,
             phase_id=parent.phase_id if parent else None,
             name=data["name"],
+            description=data.get("description", "") or None,
             state_code=data["state_code"],
             priority=data["priority"],
             start_date=start_date,
@@ -107,10 +109,12 @@ def edit_task(user, project_id, task_id, data):
         editable_project(project)
         if "responsible_id" in data:
             require_admin(user)
+        if "description" in data:
+            require_admin(user)
         parent = task.parent if task.parent_id else None
         validate_dates(project, task.start_date, data.get("due_date", task.due_date), parent=parent, task=task)
         validate_responsible(project, data.get("responsible_id", task.responsible_id), task.state_code)
-        for field in ("name", "priority", "due_date", "responsible_id"):
+        for field in ("name", "description", "priority", "due_date", "responsible_id"):
             if field in data:
                 setattr(task, field, data[field])
         task.updated_at = timezone.now()
@@ -133,6 +137,7 @@ def has_supervision(user, project):
 
 def validate_transition(user, project, task, target, reason):
     editable_project(project)
+    require_configured_state(project, target)
     if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target != "CANCELADA":
         raise ValidationError({"detail": "El proyecto no permite ejecutar tareas en su estado actual"})
     transition = TaskTransition.objects.filter(source=task.state_code, target=target).first()

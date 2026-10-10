@@ -41,6 +41,7 @@ def validate_labels(labels):
 
 class TaskCreateSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180)
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
     state_code = serializers.CharField(max_length=20)
     priority = serializers.IntegerField(min_value=1, max_value=4)
     due_date = serializers.DateField()
@@ -59,6 +60,7 @@ class TaskCreateSerializer(StrictSerializer):
 
 class TaskEditSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180, required=False)
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     priority = serializers.IntegerField(min_value=1, max_value=4, required=False)
     due_date = serializers.DateField(required=False)
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, required=False)
@@ -83,3 +85,26 @@ class TaskStateSerializer(StrictSerializer):
 
 class DependencySerializer(StrictSerializer):
     predecessor_id = serializers.IntegerField(min_value=1)
+
+
+class ProjectTaskStatusSerializer(StrictSerializer):
+    code = serializers.CharField(max_length=20)
+    name = serializers.CharField(max_length=70)
+
+
+class ProjectTaskConfigurationSerializer(StrictSerializer):
+    template = serializers.ChoiceField(choices=("standard", "custom"))
+    revision = serializers.CharField(min_length=64, max_length=64)
+    states = ProjectTaskStatusSerializer(many=True, required=False, default=list, max_length=50)
+
+    def validate(self, attrs):
+        states = attrs["states"]
+        if attrs["template"] == "standard" and states:
+            raise serializers.ValidationError({"states": "El modelo estándar no acepta estados personalizados"})
+        if attrs["template"] == "custom" and not states:
+            raise serializers.ValidationError({"states": "Configura al menos un estado"})
+        codes = [state["code"] for state in states]
+        names = [state["name"].casefold() for state in states]
+        if len(codes) != len(set(codes)) or len(names) != len(set(names)):
+            raise serializers.ValidationError({"states": "No se permiten códigos ni nombres duplicados"})
+        return attrs
