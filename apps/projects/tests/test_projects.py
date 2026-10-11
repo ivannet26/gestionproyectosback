@@ -190,14 +190,11 @@ class ProjectFlowTests(unittest.TestCase):
             with self.subTest(method=method, path=path):
                 self.assertEqual(self.request(method, path, data).status_code, 401)
 
-    def test_available_creation_persists_areas_labels_defaults_without_members_or_dates(self):
-        project = self.project(
-            area_ids=[self.area.pk, self.other_area.pk],
-            requirements=[{"name": "Texto <script>no ejecutable</script>", "kind": "technical"}],
-        )
+    def test_available_creation_persists_areas_defaults_and_server_start_without_requirements(self):
+        project = self.project()
         self.assertEqual(
             set(ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)),
-            {self.area.pk, self.other_area.pk},
+            {self.area.pk},
         )
         self.assertEqual(project.area_id, self.area.pk)
         self.assertEqual(project.start_date, self.today)
@@ -218,9 +215,9 @@ class ProjectFlowTests(unittest.TestCase):
         self.assertEqual(ProjectMember.objects.get(project=project).worker_id, self.worker.worker_id)
         self.assertEqual(self.worker.global_role, "TRABAJADOR")
 
-    def test_creation_rolls_back_all_records_on_requirement_failure(self):
+    def test_creation_rolls_back_all_records_on_membership_failure(self):
         with patch(
-            "apps.projects.services.projects.ProjectRequirement.objects.bulk_create",
+            "apps.projects.services.projects.ProjectMember.objects.bulk_create",
             side_effect=IntegrityError("synthetic failure"),
         ):
             response = self.request(
@@ -228,9 +225,7 @@ class ProjectFlowTests(unittest.TestCase):
                 data=self.project_payload(
                     mode="assigned",
                     worker_ids=[self.worker.worker_id],
-                    start_date=str(self.today),
                     end_date=str(self.today + timedelta(days=30)),
-                    requirements=[{"name": "Requisito", "kind": "technical"}],
                 ),
                 user=self.admin,
             )
@@ -246,15 +241,15 @@ class ProjectFlowTests(unittest.TestCase):
             {"area_ids": [self.inactive_area.pk]},
             {"area_ids": [self.area.pk, self.area.pk]},
             {"area_ids": [999999]},
-            {"mode": "assigned", "worker_ids": [self.worker.worker_id]},
+            {"mode": "assigned", "worker_ids": []},
             {"mode": "available", "worker_ids": [self.worker.worker_id]},
             {
                 "mode": "assigned",
                 "worker_ids": [self.outsider.worker_id],
-                "start_date": str(self.today),
                 "end_date": str(self.today + timedelta(days=10)),
             },
-            {"start_date": str(self.today), "end_date": str(self.today - timedelta(days=1))},
+            {"end_date": str(self.today - timedelta(days=1))},
+            {"start_date": str(self.today)},
             {"requirements": [{"name": "Igual", "kind": "technical"}, {"name": "igual", "kind": "technical"}]},
             {"global_role": "ADMINISTRADOR"},
         ):
@@ -277,15 +272,149 @@ class ProjectFlowTests(unittest.TestCase):
             {self.area.pk, self.other_area.pk},
         )
 
-    def test_end_date_is_required_for_both_modes_and_today_is_allowed(self):
+    def test_end_date_is_optional_for_both_modes_and_today_is_allowed(self):
         for mode in ("available", "assigned"):
-            payload = self.project_payload(mode=mode, worker_ids=[self.worker.worker_id] if mode == "assigned" else [])
-            del payload["end_date"]
-            self.assertEqual(self.request("post", data=payload, user=self.admin).status_code, 400)
-        self.assertFalse(Project.objects.exists())
+            for omit_date in (False, True):
+                with self.subTest(mode=mode, omit_date=omit_date):
+                    payload = self.project_payload(
+                        mode=mode, end_date=None,
+                        worker_ids=[self.worker.worker_id] if mode == "assigned" else [],
+                    )
+                    if omit_date:
+                        del payload["end_date"]
+                    response = self.request("post", data=payload, user=self.admin)
+                    self.assertEqual(response.status_code, 201, response.content)
+                    self.assertIsNone(response.json()["end_date"])
+                    project = Project.objects.get(pk=response.json()["id"])
+                    self.assertIsNone(project.end_date)
+                    self.assertEqual(project.start_date, self.today)
+                    self.assertEqual(project.area_id, self.area.pk)
+                    self.assertEqual(
+                        list(ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)),
+                        [self.area.pk],
+                    )
+                    self.assertEqual(ProjectMember.objects.filter(project=project).count(), int(mode == "assigned"))
         project = self.project(end_date=str(self.today))
         self.assertEqual(project.start_date, project.end_date)
         self.assertEqual(self.request("get", "catalogs/", user=self.admin).json()["creation_date"], str(self.today))
+
+    def test_creation_requires_exactly_one_area_in_each_mode(self):
+        for mode in ("available", "assigned"):
+            for areas in (None, [], [self.area.pk, self.other_area.pk], [self.area.pk, self.area.pk]):
+                with self.subTest(mode=mode, areas=areas):
+                    payload = self.project_payload(
+                        mode=mode, end_date=None,
+                        worker_ids=[self.worker.worker_id] if mode == "assigned" else [],
+                    )
+                    if areas is None:
+                        del payload["area_ids"]
+                    else:
+                        payload["area_ids"] = areas
+                    response = self.request("post", data=payload, user=self.admin)
+                    self.assertEqual(response.status_code, 400, response.content)
+                    self.assertIn("area_ids", response.json())
+                    self.assertFalse(Project.objects.exists())
+                    self.assertFalse(ProjectArea.objects.exists())
+                    self.assertFalse(ProjectMember.objects.exists())
+
+    def test_creation_service_rejects_missing_or_multiple_areas(self):
+        from rest_framework.exceptions import ValidationError
+
+        for areas in (None, [], [self.area.pk, self.other_area.pk]):
+            with self.subTest(areas=areas):
+                data = self.project_payload(area_ids=areas)
+                if areas is None:
+                    del data["area_ids"]
+                with self.assertRaises(ValidationError) as error:
+                    create_project(self.admin, data)
+                self.assertIn("area_ids", error.exception.detail)
+                self.assertFalse(Project.objects.exists())
+                self.assertFalse(ProjectArea.objects.exists())
+
+    def test_optional_end_date_rejects_empty_malformed_or_past_dates(self):
+        for date in ("", "not-a-date", "2030-02-30", str(self.today - timedelta(days=1))):
+            with self.subTest(date=date):
+                response = self.request("post", data=self.project_payload(end_date=date), user=self.admin)
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn("end_date", response.json())
+                self.assertFalse(Project.objects.exists())
+
+    def test_single_area_candidates_and_assignment_preserve_worker_multiple_areas(self):
+        WorkerArea.objects.create(worker=self.outsider.worker, area=self.area)
+        WorkerArea.objects.create(worker=self.outsider.worker, area=self.other_area)
+        for area in (self.area, self.other_area):
+            candidates = self.request("get", f"workers/?area_ids={area.pk}", user=self.admin)
+            self.assertEqual(candidates.status_code, 200)
+            self.assertIn(self.outsider.worker_id, {item["id"] for item in candidates.json()})
+            project = self.project(mode="assigned", area_ids=[area.pk], worker_ids=[self.outsider.worker_id])
+            self.assertEqual(project.area_id, area.pk)
+            self.assertEqual(ProjectArea.objects.filter(project=project).count(), 1)
+            self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
+        self.assertEqual(WorkerArea.objects.filter(worker=self.outsider.worker).count(), 2)
+
+    def test_worker_candidates_reject_missing_and_multiple_project_areas(self):
+        for query in ("", f"?area_ids={self.area.pk},{self.other_area.pk}"):
+            response = self.request("get", f"workers/{query}", user=self.admin)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("area_ids", response.json())
+
+    def test_historical_multiple_project_areas_are_not_silently_removed(self):
+        project = self.project()
+        ProjectArea.objects.create(project=project, area=self.other_area)
+        details = self.request("get", f"{project.pk}/", user=self.admin)
+        self.assertEqual({area["id"] for area in details.json()["areas"]}, {self.area.pk, self.other_area.pk})
+        self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
+        self.assertEqual(ProjectArea.objects.filter(project=project).count(), 2)
+        project.refresh_from_db()
+        self.assertEqual(project.area_id, self.area.pk)
+
+    def test_tasks_without_project_end_keep_required_date_and_parent_bounds(self):
+        project = self.project(
+            mode="assigned", worker_ids=[self.worker.worker_id], worker_contribute=True, end_date=None,
+        )
+        far_date = self.today + timedelta(days=365)
+        response = self.request("post", f"{project.pk}/tasks/", self.task_payload(due_date=str(far_date)), self.worker)
+        self.assertEqual(response.status_code, 201, response.content)
+        parent_id = response.json()["id"]
+        self.assertEqual(response.json()["responsible_id"], self.worker.worker_id)
+        self.assertEqual(
+            self.request("post", f"{project.pk}/tasks/", self.task_payload(parent_id=parent_id), self.worker).status_code,
+            201,
+        )
+        for due_date, parent in ((None, None), (str(self.today - timedelta(days=1)), None),
+                                 (str(far_date + timedelta(days=1)), parent_id)):
+            with self.subTest(due_date=due_date, parent=parent):
+                invalid = self.request(
+                    "post", f"{project.pk}/tasks/", self.task_payload(due_date=due_date, parent_id=parent), self.admin,
+                )
+                self.assertEqual(invalid.status_code, 400, invalid.content)
+                self.assertIn("due_date", invalid.json())
+        edit = self.request(
+            "patch", f"{project.pk}/tasks/{parent_id}/", {"due_date": str(far_date + timedelta(days=10))}, self.admin,
+        )
+        self.assertEqual(edit.status_code, 200, edit.content)
+
+    def test_project_form_validation_returns_field_errors_without_partial_records(self):
+        response = self.request(
+            "post", data={"name": " ", "area_ids": [], "mode": "available", "end_date": "invalid"},
+            user=self.admin,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(set(response.json()), {"name", "area_ids", "end_date"})
+        self.assertFalse(Project.objects.exists())
+        self.assertFalse(ProjectArea.objects.exists())
+        self.assertFalse(ProjectMember.objects.exists())
+
+    def test_task_form_validation_returns_field_errors_without_creating_tasks(self):
+        project = self.assigned_project()
+        response = self.request(
+            "post", f"{project.pk}/tasks/",
+            self.task_payload(name=" ", description="x" * 10001, due_date="invalid", priority=5), self.admin,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(set(response.json()), {"name", "description", "due_date", "priority"})
+        self.assertFalse(Task.objects.exists())
+        self.assertFalse(TaskLabel.objects.exists())
 
     def test_server_start_date_uses_lima_when_utc_is_already_next_day(self):
         instant = datetime(2030, 1, 2, 3, 30, tzinfo=UTC)
@@ -844,6 +973,16 @@ class ProjectFlowTests(unittest.TestCase):
 
 
 class ProjectPolicyTests(unittest.TestCase):
+    def test_project_end_date_remains_nullable_in_model_migration_state_and_sql(self):
+        self.assertTrue(Project._meta.get_field("end_date").null)
+        field = MigrationLoader(None).project_state().apps.get_model("proyectos", "Project")._meta.get_field("end_date")
+        self.assertTrue(field.null)
+        policy = import_module("apps.projects.migrations.0003_project_sql_policy")
+        structure = policy.source("sp_validar_estructura_actividad")
+        self.assertIn("p.fecha_fin IS NULL OR p_fin<=p.fecha_fin", structure)
+        self.assertIn("p_inicio>=f.fecha_inicio AND p_fin<=f.fecha_fin", structure)
+        self.assertIn("p_fin<=fecha_fin", structure)
+
     def test_creation_permission_migration_preserves_old_flags_and_has_guarded_reverse(self):
         migration = import_module("apps.projects.migrations.0005_project_worker_create")
         self.assertIn("NOT NULL DEFAULT FALSE", migration.ADD_PERMISSION_SQL)
