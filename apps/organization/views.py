@@ -20,8 +20,26 @@ class AreaViewSet(viewsets.ModelViewSet):
     serializer_class = AreaSerializer
     permission_classes = [IsAdministrator]
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        active = self.request.query_params.get("active")
+        if active is not None:
+            normalized = active.strip().lower()
+            if normalized in ("true", "1"):
+                queryset = queryset.filter(active=True)
+            elif normalized in ("false", "0"):
+                queryset = queryset.filter(active=False)
+        return queryset
+
 
 class SpecialtyViewSet(viewsets.ModelViewSet):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
     permission_classes = [IsAdministrator]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = self.request.query_params.get("search")
+        if search:
+            queryset = queryset.filter(name__icontains=search.strip())
+        return queryset

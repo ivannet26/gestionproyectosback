@@ -5,9 +5,12 @@ from .models import Worker, WorkerSpecialty
 
 
 class WorkerSpecialtySerializer(serializers.ModelSerializer):
+    id = serializers.IntegerField(source="specialty_id")
+    name = serializers.CharField(source="specialty.name", read_only=True)
+
     class Meta:
         model = WorkerSpecialty
-        fields = ["specialty", "level"]
+        fields = ["id", "name", "level"]
 
 
 class WorkerSerializer(serializers.ModelSerializer):
@@ -50,7 +53,7 @@ class WorkerSerializer(serializers.ModelSerializer):
         WorkerSpecialty.objects.filter(worker=worker).delete()
         WorkerSpecialty.objects.bulk_create(
             [
-                WorkerSpecialty(worker=worker, specialty=item["specialty"], level=item.get("level", 1))
+                WorkerSpecialty(worker=worker, specialty_id=item["specialty_id"], level=item.get("level", 1))
                 for item in specialties_data
             ]
         )
