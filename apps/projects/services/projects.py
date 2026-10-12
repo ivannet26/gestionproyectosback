@@ -11,9 +11,10 @@ from apps.organization.services.areas import active_area_ids
 from apps.workers.models import Worker
 from apps.workers.services.access import eligible_workers
 
-from ..models import Project, ProjectArea, ProjectMember, ProjectRequirement, ProjectState, ProjectType
+from ..models import Project, ProjectArea, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
 from .access import can_create_tasks, require_admin
 from .audit import audit_actor
+from .statuses import status_configuration
 
 
 def project_areas(project):
@@ -21,6 +22,11 @@ def project_areas(project):
     if ids.exists():
         return Area.objects.filter(pk__in=ids)
     return Area.objects.filter(pk=project.area_id)
+
+
+def eligible_project_workers(project):
+    areas = list(project_areas(project).filter(active=True).values_list("pk", flat=True))
+    return eligible_workers(areas) if areas else Worker.objects.none()
 
 
 def project_snapshot(project, user, detailed=False):
@@ -43,7 +49,7 @@ def project_snapshot(project, user, detailed=False):
         },
     }
     if detailed:
-        members = ProjectMember.objects.filter(project=project, active=True, worker__active=True)
+        members = ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project))
         if not admin:
             members = members.filter(worker_id=user.worker_id)
         result["participants"] = [
@@ -51,12 +57,14 @@ def project_snapshot(project, user, detailed=False):
             for member in members.select_related("worker")
         ]
         result["requirements"] = list(ProjectRequirement.objects.filter(project=project).values("id", "name", "kind"))
+        result["task_states"] = status_configuration(project, user)
     return result
 
 
 def create_project(user, data):
     require_admin(user)
     with audit_actor(user), transaction.atomic():
+        ProjectTaskStatus.objects.exists()
         start_date = timezone.localdate()
         if data["end_date"] < start_date:
             raise ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})

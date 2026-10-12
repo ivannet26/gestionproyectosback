@@ -2,130 +2,102 @@
 
 ## Alcance
 
-Estas reglas aplican a todo el código del sistema de GM Ingenieros y Consultores.
+Estas indicaciones aplican al repositorio backend del sistema de GM Ingenieros y Consultores.
 
-- Respetar la solicitud y el alcance de cada tarea.
-- Revisar el código relacionado antes de modificarlo.
-- Modificar únicamente lo necesario para cumplir la tarea.
-- No introducir funcionalidades, refactorizaciones ni dependencias no solicitadas.
-- Reutilizar las convenciones y componentes existentes cuando sean adecuados.
-- Mantener el código legible, predecible y fácil de mantener.
+- Lee este archivo y revisa el código relacionado antes de modificarlo.
+- Respeta el alcance solicitado y realiza únicamente los cambios necesarios.
+- Conserva la arquitectura, los contratos de API y las convenciones existentes.
+- Protege los cambios locales; no sobrescribas ni reviertas trabajo ajeno.
+- No agregues funcionalidades, refactorizaciones o dependencias que no sean necesarias para la solicitud.
 
-## Convenciones generales
+## Convenciones de código
 
-- Usar nombres técnicos en inglés y textos visibles de la interfaz en español.
-- Usar `PascalCase` para clases y componentes.
-- Usar `camelCase` para variables, funciones, propiedades y métodos en JavaScript.
-- Usar `snake_case` para variables, funciones y módulos de Python.
-- Usar `UPPER_SNAKE_CASE` para constantes.
-- Evitar abreviaturas ambiguas, nombres genéricos y valores mágicos.
-- Mantener funciones y componentes pequeños, con una responsabilidad clara.
-- Evitar duplicación de lógica; extraer utilidades solo cuando exista reutilización real.
-- Preferir soluciones simples y explícitas antes que abstracciones innecesarias.
-- No dejar código comentado, logs de depuración ni imports sin utilizar.
-- Los comentarios deben explicar decisiones o restricciones, no repetir el código.
+- Usa nombres técnicos en inglés y textos visibles de la API en español, según los contratos existentes.
+- Usa `PascalCase` para clases; `snake_case` para módulos, funciones y variables; y `UPPER_SNAKE_CASE` para constantes.
+- Sigue PEP 8 y las convenciones configuradas en el proyecto.
+- Usa anotaciones de tipo cuando mejoren la claridad.
+- Mantén las funciones y clases enfocadas en una responsabilidad clara.
+- Evita duplicar lógica y crear abstracciones sin reutilización real.
+- Prefiere soluciones simples y explícitas.
+- Captura excepciones específicas y no ocultes errores con valores predeterminados silenciosos.
+- No dejes imports sin usar, logs de depuración ni código comentado.
 
-## Python, Django y Django REST Framework
+## Organización por dominios
 
-- Seguir PEP 8 y las convenciones existentes del proyecto.
-- Preferir funciones y clases con nombres descriptivos.
-- Usar anotaciones de tipo cuando mejoren la claridad sin forzar complejidad.
-- Mantener las vistas y ViewSets ligeros; la lógica de negocio compleja debe estar en servicios reutilizables.
-- Usar serializers para validar y transformar los datos de entrada y salida.
-- Aplicar permisos y validaciones en el backend; nunca confiar únicamente en la interfaz.
-- Mantener respuestas HTTP y errores con un formato uniforme.
-- Capturar excepciones específicas; evitar `except Exception` salvo que exista una razón documentada.
-- No ocultar errores reales con valores predeterminados silenciosos.
-- Separar validación, lógica de negocio y presentación de datos.
-- Escribir pruebas para reglas de negocio, endpoints y casos de error relevantes.
+- Organiza cada dominio en su aplicación propietaria dentro de `apps/<domain>`, siguiendo los nombres y estructura ya establecidos.
+- Mantén modelos, servicios, serializers, vistas, permisos, pruebas y migraciones junto al dominio responsable.
+- Importa cada entidad desde su aplicación propietaria. No dupliques modelos para una misma tabla ni uses otra aplicación como ubicación permanente para entidades ajenas.
+- Mantén las reglas de negocio en servicios reutilizables según el patrón existente; conserva vistas y ViewSets ligeros.
+- Evita dependencias circulares entre aplicaciones.
+- Conserva las etiquetas históricas de Django y las dependencias de migración aunque el paquete tenga un nombre distinto. No reescribas migraciones aplicadas para reorganizar carpetas.
+- Mantén separados los roles globales y los roles propios de cada entidad o proyecto. Los roles globales vigentes son `ADMINISTRADOR` y `TRABAJADOR`; no agregues ni reasignes roles sin un requisito explícito.
 
-## React y JavaScript
+## Django y Django REST Framework
 
-- Usar componentes funcionales y Hooks.
-- Nombrar los componentes con `PascalCase` y los Hooks personalizados con el prefijo `use`.
-- Mantener cada componente enfocado en una responsabilidad.
-- Recibir datos mediante props explícitas y evitar dependencias ocultas.
-- Centralizar las llamadas HTTP y no mezclarlas innecesariamente con componentes visuales.
-- Mantener separados los datos simulados, la lógica de presentación y la comunicación con la API.
-- Usar estado local por defecto; elevarlo o compartirlo solo cuando sea necesario.
-- Evitar usar `useEffect` para calcular valores derivados que puedan obtenerse directamente.
-- Usar claves estables al renderizar listas.
-- Controlar estados de carga, error, vacío y éxito cuando corresponda.
-- No mutar directamente estados, props ni objetos compartidos.
-- Preferir HTML semántico, etiquetas asociadas a campos y navegación accesible por teclado.
+- Usa serializers para validar, normalizar y transformar datos de entrada y salida.
+- Mantén respuestas HTTP y errores con el formato establecido por el proyecto.
+- Coloca autenticación, autorización y validación crítica en el backend; nunca confíes en validaciones de React.
+- Aplica permisos por operación y por objeto. Deniega por defecto y limita las consultas al conjunto de datos autorizado.
+- Conserva los contratos de API existentes salvo que la solicitud requiera cambiarlos.
+- Usa transacciones para operaciones que deban completarse de forma atómica.
+- No añadas autenticación, autorización ni transporte alternativos cuando ya exista un mecanismo apropiado.
 
-## Validación y calidad
+## MySQL, esquema y migraciones
 
-- Validar entradas tanto en la interfaz como en el backend, sin duplicar reglas críticas de forma inconsistente.
-- Mostrar errores comprensibles al usuario y conservar detalles técnicos en los registros apropiados.
-- Mantener funciones deterministas cuando sea posible.
-- Evitar efectos secundarios ocultos y dependencias globales innecesarias.
-- Antes de finalizar, revisar formato, imports, warnings y errores de consola.
-- Ejecutar las pruebas y verificaciones disponibles para el código modificado.
-- Verificar que la compilación o ejecución local funcione correctamente.
-- No considerar terminada una tarea si existen errores conocidos sin informar.
+- Inspecciona los modelos, las tablas y el esquema vigente antes de proponer cambios de persistencia.
+- Conserva nombres físicos, tipos, claves, índices, restricciones y relaciones existentes, salvo que el cambio esté solicitado y justificado.
+- Usa Django ORM o consultas parametrizadas. Nunca concatentes SQL con datos del usuario.
+- Respeta los procedimientos, vistas, triggers y transacciones existentes; no los evites ni los dupliques sin necesidad.
+- No modifiques migraciones ya aplicadas.
+- Crea migraciones nuevas con dependencias correctas y revisa su SQL e impacto antes de entregarlas.
+- Usa migraciones de estado solo cuando el esquema físico ya corresponda exactamente y el cambio sea únicamente de estado o propiedad de modelos. No las uses para ocultar diferencias ni para reemplazar cambios físicos requeridos.
+- No ejecutes migraciones ni escrituras contra Aiven, producción o bases compartidas sin autorización explícita para esa operación.
+- No sustituyas MySQL silenciosamente por otra tecnología ni crees una estructura paralela para evitar el esquema existente.
 
-## Seguridad del código
+## Seguridad y datos
 
-- No incluir contraseñas, tokens, claves ni datos sensibles en el código fuente.
-- No confiar en datos provenientes del cliente.
-- Validar entradas y controlar permisos antes de ejecutar operaciones sensibles.
-- Evitar exponer información interna en mensajes de error visibles.
-- No utilizar código dinámico o ejecuciones arbitrarias sin una justificación estricta.
+- Exige autenticación por defecto. Las rutas públicas deben ser explícitas, limitarse a su propósito y usar las protecciones existentes.
+- Valida autorización en cada solicitud y sobre cada objeto; no confíes en IDs, filtros ni permisos enviados por el cliente.
+- Valida, normaliza y limita longitud y formato de las entradas en el servidor.
+- Usa los mecanismos existentes para contraseñas, tokens, invitaciones y recuperación; no almacenes ni registres secretos en texto plano.
+- Mantén CORS restringido a los orígenes autorizados. No desactives CSRF ni debilites autenticación o permisos para resolver errores.
+- No expongas secretos, credenciales, tokens, enlaces de activación, datos personales innecesarios, trazas ni detalles de infraestructura en respuestas o logs.
+- Lee credenciales y configuración sensible desde variables de entorno. No modifiques `.env`; documenta variables nuevas únicamente en `.env.example` con valores ficticios.
+- Usa el mecanismo de auditoría existente para acciones sensibles, sin registrar contenido confidencial innecesario.
+- No uses datos reales en pruebas o fixtures.
 
-## Entrega de cada tarea
+## Pruebas y calidad
 
-Antes de implementar:
-
-1. Revisar el código relacionado.
-2. Identificar los archivos que realmente deben modificarse.
-3. Presentar un plan breve si la tarea involucra varios cambios.
-
-Después de implementar:
-
-1. Informar los archivos modificados.
-2. Resumir el comportamiento implementado.
-3. Indicar las validaciones ejecutadas.
-4. Informar errores, limitaciones o pendientes reales.
-
-
-## Seguridad web y datos operativos
-
-- Aplicar mínimo privilegio y denegar el acceso por defecto.
-- Exigir autenticación en endpoints privados y validar autorización en el backend para cada operación y cada objeto.
-- Filtrar proyectos, áreas, trabajadores, tareas y subtareas según rol, áreas autorizadas y participación; no confiar en controles ocultos ni IDs enviados por el cliente.
-- Validar, normalizar y limitar longitud/formato de toda entrada en el servidor.
-- Usar Django ORM o consultas parametrizadas; nunca concatenar SQL con datos del usuario.
-- Evitar XSS: no insertar contenido del usuario como HTML ni usar `dangerouslySetInnerHTML` sin sanitización justificada.
-- No exponer secretos, datos personales innecesarios, trazas internas ni detalles de infraestructura en respuestas o logs.
-- Mantener CORS restringido a orígenes autorizados; no desactivar CSRF ni debilitar autenticación para resolver errores.
-- No almacenar credenciales en el repositorio, frontend, logs o respuestas; mantenerlas en variables de entorno y usar `.env.example` con valores ficticios.
-- Tratar proyectos publicados como información interna; nunca hacerlos accesibles sin autenticación salvo requisito explícito aprobado.
-- Registrar actor y acción en cambios sensibles mediante el mecanismo de auditoría existente, sin copiar contenido confidencial innecesariamente.
-- Probar permisos y aislamiento entre áreas con datos sintéticos; nunca usar datos reales en fixtures o pruebas.
-- No ejecutar migraciones destructivas ni escrituras contra producción o bases compartidas sin autorización explícita y revisión previa.
+- Escribe o ajusta pruebas sintéticas para las reglas de negocio, permisos, endpoints y casos de error afectados.
+- Usa la configuración de pruebas aislada existente. No apuntes pruebas que escriben datos a Aiven ni a una base compartida.
+- No sustituyas MySQL por SQLite silenciosamente. Usa SQLite solo cuando la prueba aislada existente lo configure explícitamente y sea adecuado para lo que se valida.
+- Ejecuta las verificaciones pertinentes, como `python manage.py check`, pruebas dirigidas y comprobaciones de migraciones en modo no destructivo.
+- No ejecutes suites completas no relacionadas si las pruebas dirigidas cubren el cambio.
+- Informa únicamente las verificaciones realmente ejecutadas y sus resultados.
 
 ## Comentarios en el código
 
-- No agregar comentarios de ningún tipo dentro del código fuente: comentarios de línea, bloque, documentación inline, `TODO`, `FIXME` ni código comentado.
-- Todo código nuevo o modificado debe quedar libre de comentarios.
-- El código debe ser comprensible mediante nombres claros, funciones pequeñas y una estructura coherente.
-- Las explicaciones técnicas, decisiones y reglas deben registrarse fuera del código, en `AGENTS.md` o en la documentación correspondiente.
-- No realizar cambios masivos en archivos no relacionados únicamente para eliminar comentarios existentes.
+- No agregues comentarios de ningún tipo al código fuente: comentarios de línea o bloque, documentación inline, `TODO`, `FIXME` ni código comentado.
+- Expresa la intención mediante nombres claros, funciones pequeñas y una estructura coherente.
+- No hagas cambios masivos en archivos no relacionados para eliminar comentarios existentes.
+- Registra decisiones técnicas y contexto temporal fuera del código, en la documentación pertinente.
 
-## Organización por dominios y entidades
+## Flujo de trabajo y entrega
 
-- Cada aplicación debe ser propietaria de los modelos, servicios, validaciones, endpoints, pruebas y migraciones de su dominio.
-- Importa cada entidad desde su aplicación propietaria. No dupliques modelos ni uses otra aplicación como ubicación permanente para entidades ajenas.
-- Mantén las reglas de negocio junto al dominio responsable y evita dependencias circulares entre aplicaciones.
-- Al reorganizar código, conserva los contratos existentes de API y el comportamiento funcional, salvo que la tarea solicite cambiarlos.
-- Si una entidad se mapea a una tabla existente, conserva nombres de tablas y columnas, tipos, claves, restricciones y relaciones, salvo cambio expresamente requerido.
-- No modifiques migraciones ya aplicadas. Las nuevas migraciones deben respetar el grafo existente y distinguir claramente cambios de estado de cambios físicos en la base de datos.
-- Usa migraciones solo de estado cuando el esquema físico ya corresponda exactamente y el cambio sea únicamente de propiedad o estado de modelos en Django. No las uses para ocultar diferencias ni para sustituir la creación o corrección de tablas.
-- Antes de proponer una migración, revisa sus dependencias, operaciones, SQL generado y compatibilidad con el historial existente. Documenta su impacto y las verificaciones pendientes.
-- Mantén `AGENTS.md` como guía permanente de codificación; registra el estado temporal de módulos y migraciones en documentación de revisión.
-- No incluyas comentarios en el código.
+Antes de implementar:
 
-- Organiza modelos, servicios, vistas y permisos en la aplicación propietaria de cada entidad; evita modelos duplicados para una misma tabla.
-- Conserva las etiquetas históricas de las aplicaciones y las migraciones ya aplicadas aunque el paquete de código tenga un nombre distinto. No reescribas el historial de migraciones para reorganizar carpetas.
-- Aplica permisos por operación y por objeto en el servidor. Cualquier permiso nuevo debe tener un alcance explícito y un valor inicial que no amplíe el acceso de usuarios existentes.
+1. Revisa el código, el esquema y las migraciones relacionados.
+2. Identifica los archivos que realmente deben modificarse.
+3. Si la tarea implica varios cambios, presenta un plan breve y continúa sin esperar confirmación, salvo que exista un bloqueo real.
+
+Después de implementar:
+
+1. Informa los archivos modificados.
+2. Resume el comportamiento implementado y los endpoints afectados.
+3. Indica las verificaciones ejecutadas y sus resultados.
+4. Informa bloqueos, limitaciones y pendientes reales.
+
+## Git
+
+- Inspecciona el estado con comandos de lectura, como `git status` y `git diff`, cuando sea necesario.
+- No ejecutes commits, push ni operaciones destructivas de Git. El usuario gestiona los commits y la publicación.

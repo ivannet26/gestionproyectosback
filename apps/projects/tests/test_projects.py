@@ -19,6 +19,7 @@ from apps.projects.models import (
     ProjectMember,
     ProjectRequirement,
     ProjectState,
+    ProjectTaskStatus,
     ProjectType,
     Task,
     TaskDependency,
@@ -53,6 +54,7 @@ class ProjectFlowTests(unittest.TestCase):
             ProjectArea,
             ProjectMember,
             ProjectRequirement,
+            ProjectTaskStatus,
             Task,
             TaskDependency,
             TaskLabel,
@@ -152,7 +154,6 @@ class ProjectFlowTests(unittest.TestCase):
         return self.project(
             mode="assigned",
             worker_ids=[self.worker.worker_id],
-            start_date=str(self.today),
             end_date=str(self.today + timedelta(days=30)),
             **changes,
         )
