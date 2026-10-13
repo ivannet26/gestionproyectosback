@@ -27,6 +27,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 INSTALLED_APPS = [
     "apps.organization",
     "apps.workers",
+    "apps.teams",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

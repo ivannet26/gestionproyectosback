@@ -15,6 +15,7 @@ from apps.authentication import models as authentication_models
 from apps.authentication.models import FINAL_ROLES, User
 from apps.organization.models import Area, Specialty
 from apps.projects.models import Project, ProjectArea, ProjectMember, Task
+from apps.teams.models import Team, TeamMember
 from apps.workers.models import Worker, WorkerArea, WorkerSpecialty
 
 
@@ -26,6 +27,7 @@ class CanonicalApplicationTests(SimpleTestCase):
             ("projects", "proyectos"),
             ("organization", "organization"),
             ("workers", "workers"),
+            ("teams", "teams"),
         ):
             with self.subTest(application=name):
                 matches = [configuration for configuration in configured if configuration.name == f"apps.{name}"]
@@ -45,7 +47,6 @@ class CanonicalApplicationTests(SimpleTestCase):
             "administration",
             "audit",
             "deliverables",
-            "teams",
             "tracking",
         ):
             with self.subTest(application=name):
@@ -122,6 +123,7 @@ class CanonicalApplicationTests(SimpleTestCase):
             ("proyectos", "apps.projects.migrations"),
             ("organization", "apps.organization.migrations"),
             ("workers", "apps.workers.migrations"),
+            ("teams", "apps.teams.migrations"),
         ):
             with self.subTest(application=label):
                 self.assertEqual(loader.migrations_module(label)[0], path)
@@ -137,6 +139,8 @@ class EntitySegmentationTests(SimpleTestCase):
             "trabajador": Worker,
             "trabajador_area": WorkerArea,
             "trabajador_especialidad": WorkerSpecialty,
+            "equipo": Team,
+            "equipo_miembro": TeamMember,
             "usuario": User,
             "proyecto": Project,
             "actividad": Task,
@@ -162,6 +166,9 @@ class EntitySegmentationTests(SimpleTestCase):
             (ProjectArea, "area", Area, "area_id"),
             (ProjectMember, "worker", Worker, "trabajador_id"),
             (Task, "responsible", Worker, "responsable_id"),
+            (Team, "area", Area, "area_id"),
+            (TeamMember, "team", Team, "equipo_id"),
+            (TeamMember, "worker", Worker, "trabajador_id"),
         ):
             with self.subTest(model=model.__name__, field=field_name):
                 field = model._meta.get_field(field_name)
@@ -177,6 +184,7 @@ class EntitySegmentationTests(SimpleTestCase):
             ("/api/organization/areas/", "apps.organization.views"),
             ("/api/organization/specialties/", "apps.organization.views"),
             ("/api/workers/", "apps.workers.views"),
+            ("/api/teams/teams/", "apps.teams.views"),
             ("/api/projects/", "apps.projects.views"),
             ("/api/projects/7/tasks/11/dependencies/", "apps.projects.views"),
         ):
@@ -197,6 +205,8 @@ class EntitySegmentationTests(SimpleTestCase):
             ("trabajador", "workers.Worker"),
             ("trabajador_area", "workers.WorkerArea"),
             ("trabajador_especialidad", "workers.WorkerSpecialty"),
+            ("equipo", "teams.Team"),
+            ("equipo_miembro", "teams.TeamMember"),
         ):
             with self.subTest(table=table):
                 owners = [model._meta.label for model in registry.get_models() if model._meta.db_table == table]
@@ -219,6 +229,7 @@ class EntitySegmentationTests(SimpleTestCase):
             ("proyectos", "0004_organization_area_state"),
             ("autenticacion", "0005_alter_workerarea_area_delete_area"),
             ("workers", "0001_existing_worker_models"),
+            ("teams", "0001_initial"),
             ("autenticacion", "0006_alter_workerarea_worker_delete_worker"),
             ("autenticacion", "0007_worker_area_ownership"),
         ):
