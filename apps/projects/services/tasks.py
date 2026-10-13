@@ -30,11 +30,15 @@ def validate_dates(project, start_date, due_date, parent=None, task=None):
     if due_date < start_date or (project.end_date and due_date > project.end_date):
         raise ValidationError({"due_date": "La fecha límite queda fuera del periodo permitido"})
     if project.start_date and start_date < project.start_date:
-        raise ValidationError({"due_date": "La tarea debe respetar el inicio del proyecto"})
+        raise ValidationError({"start_date": "La tarea debe respetar el inicio del proyecto"})
+    if parent and start_date < parent.start_date:
+        raise ValidationError({"start_date": "La subtarea debe respetar el inicio de su tarea padre"})
     if parent and (start_date < parent.start_date or due_date > parent.due_date):
         raise ValidationError({"due_date": "La subtarea debe quedar dentro del periodo de su tarea padre"})
     if task and Task.objects.filter(parent=task, archived=False, due_date__gt=due_date).exists():
         raise ValidationError({"due_date": "La fecha dejaría subtareas fuera del periodo padre"})
+    if task and Task.objects.filter(parent=task, archived=False, start_date__lt=start_date).exists():
+        raise ValidationError({"start_date": "El inicio dejaría subtareas fuera del periodo padre"})
 
 
 def save_labels(task, data):
@@ -112,9 +116,9 @@ def edit_task(user, project_id, task_id, data):
         if "description" in data:
             require_admin(user)
         parent = task.parent if task.parent_id else None
-        validate_dates(project, task.start_date, data.get("due_date", task.due_date), parent=parent, task=task)
+        validate_dates(project, data.get("start_date", task.start_date), data.get("due_date", task.due_date), parent=parent, task=task)
         validate_responsible(project, data.get("responsible_id", task.responsible_id), task.state_code)
-        for field in ("name", "description", "priority", "due_date", "responsible_id"):
+        for field in ("name", "description", "priority", "start_date", "due_date", "responsible_id"):
             if field in data:
                 setattr(task, field, data[field])
         task.updated_at = timezone.now()

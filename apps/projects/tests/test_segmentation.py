@@ -14,7 +14,7 @@ from django.urls import resolve
 from apps.authentication import models as authentication_models
 from apps.authentication.models import FINAL_ROLES, User
 from apps.organization.models import Area, Specialty
-from apps.projects.models import Project, ProjectArea, ProjectMember, Task
+from apps.projects.models import Project, ProjectMember, Task
 from apps.teams.models import Team, TeamMember
 from apps.workers.models import Worker, WorkerArea, WorkerSpecialty
 
@@ -163,7 +163,6 @@ class EntitySegmentationTests(SimpleTestCase):
             (WorkerArea, "worker", Worker, "trabajador_id"),
             (WorkerArea, "area", Area, "area_id"),
             (Project, "area", Area, "area_id"),
-            (ProjectArea, "area", Area, "area_id"),
             (ProjectMember, "worker", Worker, "trabajador_id"),
             (Task, "responsible", Worker, "responsable_id"),
             (Team, "area", Area, "area_id"),
@@ -213,7 +212,6 @@ class EntitySegmentationTests(SimpleTestCase):
                 self.assertEqual(owners, [label])
         for app_label, model_name, field_name, owner in (
             ("autenticacion", "User", "worker", "workers.Worker"),
-            ("proyectos", "ProjectArea", "area", "organization.Area"),
             ("workers", "WorkerArea", "worker", "workers.Worker"),
             ("workers", "WorkerArea", "area", "organization.Area"),
         ):

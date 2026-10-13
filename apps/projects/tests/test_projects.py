@@ -15,7 +15,6 @@ from apps.authentication.tokens import issue_access
 from apps.organization.models import Area
 from apps.projects.models import (
     Project,
-    ProjectArea,
     ProjectMember,
     ProjectRequirement,
     ProjectState,
@@ -51,7 +50,6 @@ class ProjectFlowTests(unittest.TestCase):
             TaskState,
             TaskTransition,
             Project,
-            ProjectArea,
             ProjectMember,
             ProjectRequirement,
             ProjectTaskStatus,
@@ -192,10 +190,7 @@ class ProjectFlowTests(unittest.TestCase):
 
     def test_available_creation_persists_areas_defaults_and_server_start_without_requirements(self):
         project = self.project()
-        self.assertEqual(
-            set(ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)),
-            {self.area.pk},
-        )
+        self.assertNotIn("proyecto_area", connection.introspection.table_names())
         self.assertEqual(project.area_id, self.area.pk)
         self.assertEqual(project.start_date, self.today)
         self.assertEqual(project.end_date, self.today + timedelta(days=30))
@@ -231,7 +226,6 @@ class ProjectFlowTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 409)
         self.assertFalse(Project.objects.exists())
-        self.assertFalse(ProjectArea.objects.exists())
         self.assertFalse(ProjectMember.objects.exists())
 
     def test_bad_project_payloads_never_create_partial_records(self):
@@ -289,10 +283,7 @@ class ProjectFlowTests(unittest.TestCase):
                     self.assertIsNone(project.end_date)
                     self.assertEqual(project.start_date, self.today)
                     self.assertEqual(project.area_id, self.area.pk)
-                    self.assertEqual(
-                        list(ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)),
-                        [self.area.pk],
-                    )
+                    self.assertEqual(response.json()["areas"], [{"id": self.area.pk, "name": self.area.name}])
                     self.assertEqual(ProjectMember.objects.filter(project=project).count(), int(mode == "assigned"))
         project = self.project(end_date=str(self.today))
         self.assertEqual(project.start_date, project.end_date)
@@ -314,7 +305,6 @@ class ProjectFlowTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 400, response.content)
                     self.assertIn("area_ids", response.json())
                     self.assertFalse(Project.objects.exists())
-                    self.assertFalse(ProjectArea.objects.exists())
                     self.assertFalse(ProjectMember.objects.exists())
 
     def test_creation_service_rejects_missing_or_multiple_areas(self):
@@ -329,7 +319,6 @@ class ProjectFlowTests(unittest.TestCase):
                     create_project(self.admin, data)
                 self.assertIn("area_ids", error.exception.detail)
                 self.assertFalse(Project.objects.exists())
-                self.assertFalse(ProjectArea.objects.exists())
 
     def test_optional_end_date_rejects_empty_malformed_or_past_dates(self):
         for date in ("", "not-a-date", "2030-02-30", str(self.today - timedelta(days=1))):
@@ -348,7 +337,6 @@ class ProjectFlowTests(unittest.TestCase):
             self.assertIn(self.outsider.worker_id, {item["id"] for item in candidates.json()})
             project = self.project(mode="assigned", area_ids=[area.pk], worker_ids=[self.outsider.worker_id])
             self.assertEqual(project.area_id, area.pk)
-            self.assertEqual(ProjectArea.objects.filter(project=project).count(), 1)
             self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
         self.assertEqual(WorkerArea.objects.filter(worker=self.outsider.worker).count(), 2)
 
@@ -358,15 +346,14 @@ class ProjectFlowTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn("area_ids", response.json())
 
-    def test_historical_multiple_project_areas_are_not_silently_removed(self):
+    def test_project_area_is_the_only_source_for_visibility_and_details(self):
         project = self.project()
-        ProjectArea.objects.create(project=project, area=self.other_area)
         details = self.request("get", f"{project.pk}/", user=self.admin)
-        self.assertEqual({area["id"] for area in details.json()["areas"]}, {self.area.pk, self.other_area.pk})
+        self.assertEqual(details.json()["areas"], [{"id": self.area.pk, "name": self.area.name}])
+        self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 404)
+        Project.objects.filter(pk=project.pk).update(area=self.other_area)
+        self.assertEqual(self.request("get", f"{project.pk}/", user=self.worker).status_code, 404)
         self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
-        self.assertEqual(ProjectArea.objects.filter(project=project).count(), 2)
-        project.refresh_from_db()
-        self.assertEqual(project.area_id, self.area.pk)
 
     def test_tasks_without_project_end_keep_required_date_and_parent_bounds(self):
         project = self.project(
@@ -402,7 +389,6 @@ class ProjectFlowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(set(response.json()), {"name", "area_ids", "end_date"})
         self.assertFalse(Project.objects.exists())
-        self.assertFalse(ProjectArea.objects.exists())
         self.assertFalse(ProjectMember.objects.exists())
 
     def test_task_form_validation_returns_field_errors_without_creating_tasks(self):

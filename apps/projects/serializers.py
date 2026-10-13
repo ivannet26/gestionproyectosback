@@ -66,6 +66,7 @@ class TaskEditSerializer(StrictSerializer):
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     priority = serializers.IntegerField(min_value=1, max_value=4, required=False)
     due_date = serializers.DateField(required=False)
+    start_date = serializers.DateField(required=False)
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, required=False)
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
     labels = LabelSerializer(many=True, required=False, max_length=50)

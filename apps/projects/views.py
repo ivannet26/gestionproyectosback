@@ -16,8 +16,8 @@ from .serializers import (
     TaskStateSerializer,
 )
 from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
-from .services.presentation import task_snapshot
-from .services.projects import create_project, project_snapshot, worker_candidates
+from .services.presentation import task_snapshot, task_snapshots
+from .services.projects import create_project, project_snapshot, project_snapshots, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
 from .services.statuses import catalog_states, configure_task_states, status_configuration
 
@@ -70,10 +70,7 @@ class ProjectListView(ProjectApiView):
 
     def get(self, request):
         return Response(
-            [
-                project_snapshot(project, request.user)
-                for project in visible_projects(request.user).order_by("-id")[:200]
-            ]
+            project_snapshots(visible_projects(request.user).order_by("-id")[:200], request.user)
         )
 
     def post(self, request):
@@ -95,10 +92,9 @@ class TaskListView(ProjectApiView):
     def get(self, request, project_id):
         project = project_for_user(request.user, project_id)
         return Response(
-            [
-                task_snapshot(task, project, request.user)
-                for task in tasks_for_user(request.user, project).select_related("responsible").order_by("id")
-            ]
+            task_snapshots(
+                tasks_for_user(request.user, project).select_related("responsible").order_by("id"), project, request.user,
+            )
         )
 
     def post(self, request, project_id):

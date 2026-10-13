@@ -43,7 +43,12 @@ class User(AbstractBaseUser):
 
     @property
     def global_role(self):
-        roles = set(UserRole.objects.filter(user_id=self.pk).values_list("role_code", flat=True))
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("userrole_set")
+        roles = (
+            {role.role_code for role in prefetched}
+            if prefetched is not None
+            else set(UserRole.objects.filter(user_id=self.pk).values_list("role_code", flat=True))
+        )
         return next(iter(roles)) if len(roles) == 1 and roles.issubset(FINAL_ROLES) else None
 
     def has_perm(self, perm, obj=None):

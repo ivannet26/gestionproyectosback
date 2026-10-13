@@ -3,7 +3,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.authentication.services.eligibility import account_eligible
 from apps.workers.services.areas import authorized_areas
-from ..models import Project, ProjectArea, ProjectMember, Task
+from ..models import Project, ProjectMember, Task
 
 
 def require_admin(user):
@@ -38,16 +38,13 @@ def visible_projects(user):
     if user.global_role != "TRABAJADOR":
         raise PermissionDenied("Cuenta no autorizada")
     areas = authorized_areas(user.worker).values_list("pk", flat=True)
-    relationships = ProjectArea.objects.filter(project_id=OuterRef("pk"))
     members = ProjectMember.objects.filter(project_id=OuterRef("pk"), worker_id=user.worker_id)
     return (
         projects.annotate(
-            has_areas=Exists(relationships),
-            matches_area=Exists(relationships.filter(area_id__in=areas)),
             is_member=Exists(members.filter(active=True)),
             revoked_member=Exists(members.filter(active=False)),
         )
-        .filter(Q(matches_area=True) | Q(has_areas=False, area_id__in=areas))
+        .filter(area_id__in=areas)
         .filter(Q(is_member=True) | Q(available=True, confidential=False, revoked_member=False))
     )
 

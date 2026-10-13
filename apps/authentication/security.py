@@ -26,7 +26,11 @@ class AccessTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Credenciales no válidas")
         try:
             claims = decode_token(header[7:], "access")
-            user = User.objects.select_related("worker", "worker__area").get(pk=int(claims["sub"]))
+            user = (
+                User.objects.select_related("worker", "worker__area")
+                .prefetch_related("userrole_set")
+                .get(pk=int(claims["sub"]))
+            )
         except (InvalidToken, User.DoesNotExist, ValueError):
             raise AuthenticationFailed("Credenciales no válidas") from None
         if not AuthToken.objects.filter(

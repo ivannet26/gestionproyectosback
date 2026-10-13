@@ -2,7 +2,7 @@
 
 ## Contrato de nuevas creaciones
 
-`POST /api/projects/` conserva `area_ids`, obligatorio con exactamente un identificador de área activa. El serializer rechaza ausencia, lista vacía, duplicados y múltiples áreas; el servicio vuelve a comprobar la cardinalidad antes de escribir. La transacción guarda esa misma área en `proyecto.area_id` y una única asociación en `proyecto_area`.
+`POST /api/projects/` conserva `area_ids`, obligatorio con exactamente un identificador de área activa. El serializer rechaza ausencia, lista vacía, duplicados y múltiples áreas; el servicio vuelve a comprobar la cardinalidad antes de escribir. La transacción guarda esa área exclusivamente en `proyecto.area_id`. La respuesta mantiene `areas` como una lista de un elemento.
 
 `end_date` acepta una fecha ISO, `null` o ausencia. React envía `null` cuando el control queda vacío. Las cadenas vacías y fechas inválidas se rechazan. Una fecha indicada no puede preceder al inicio asignado por el servidor, incluso si cambia el día entre validación y creación. Sin fecha final, la respuesta devuelve `end_date: null`.
 
@@ -16,7 +16,9 @@ La modalidad, pertenencia de participantes y permisos mantienen sus reglas. `GET
 
 Esta revisión no consultó Aiven ni ejecutó procedimientos MySQL. Las pruebas ORM usan exclusivamente la configuración SQLite aislada; la revisión de procedimientos es estática.
 
-## Proyectos históricos: pendiente de auditoría autorizada
+## Auditoría histórica anterior y retirada versionada
+
+La auditoría posteriormente aportada por el responsable no devolvió inconsistencias. La migración `0007_project_single_area` sustituye las lecturas históricas descritas abajo y retira la tabla tras una nueva validación. El plan vigente, resultados de revisión, tratamientos ante discrepancias y consultas posteriores están en `../migrations/reviews/0007_project_single_area.md`. La siguiente sección conserva el contexto de la revisión previa; no describe el comportamiento actual después de 0007.
 
 No se sabe cuántos proyectos compartidos tienen varias asociaciones o discrepancias con el área principal: no se accedió a Aiven. No se elimina ninguna asociación ni se impone una restricción global sobre datos sin revisarlos.
 

@@ -102,7 +102,7 @@ def issue_stored(user, purpose, expires_at, revoke_previous=False):
     return token
 
 
-def consume_stored(token, purpose):
+def consume_stored(token, purpose, *, user=None):
     claims = decode_token(token, purpose)
     with transaction.atomic():
         record = (
@@ -110,11 +110,14 @@ def consume_stored(token, purpose):
             .filter(digest=digest_token(token), purpose=purpose, user_id=int(claims["sub"]))
             .first()
         )
-        if record is None or record.consumed_at is not None or record.expires_at <= timezone.now():
+        if (
+            record is None or record.consumed_at is not None or record.expires_at <= timezone.now()
+            or (user is not None and user.pk != record.user_id)
+        ):
             raise InvalidToken
         record.consumed_at = timezone.now()
         record.save(update_fields=["consumed_at"])
-        return record.user, record.expires_at
+        return (user if user is not None else record.user), record.expires_at
 
 
 def inspect_stored(token, purpose):

@@ -1,0 +1,53 @@
+SELECT app, name, applied
+FROM django_migrations
+WHERE app='proyectos' AND name='0007_project_single_area';
+
+SELECT COUNT(*) AS remaining_project_area_tables
+FROM information_schema.TABLES
+WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='proyecto_area';
+
+SELECT p.id, p.codigo, p.nombre, p.area_id
+FROM proyecto p LEFT JOIN area a ON a.id=p.area_id
+WHERE p.area_id IS NULL OR a.id IS NULL;
+
+SELECT COLUMN_TYPE, IS_NULLABLE
+FROM information_schema.COLUMNS
+WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='proyecto' AND COLUMN_NAME='area_id';
+
+SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='proyecto' AND COLUMN_NAME='area_id'
+AND REFERENCED_TABLE_SCHEMA=DATABASE();
+
+SHOW CREATE PROCEDURE sp_cambiar_estado_actividad;
+
+SELECT ROUTINE_NAME, SECURITY_TYPE,
+       ROUTINE_DEFINITION IS NULL AS definition_not_visible,
+       ROUTINE_DEFINITION LIKE '%proyecto_area%' AS references_retired_table
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA=DATABASE() AND ROUTINE_NAME='sp_cambiar_estado_actividad';
+
+SELECT ROUTINE_TYPE, ROUTINE_NAME
+FROM information_schema.ROUTINES
+WHERE ROUTINE_SCHEMA=DATABASE()
+AND (ROUTINE_DEFINITION LIKE '%proyecto_area%' OR ROUTINE_DEFINITION IS NULL);
+
+SELECT TABLE_NAME FROM information_schema.VIEWS
+WHERE TABLE_SCHEMA=DATABASE() AND (VIEW_DEFINITION LIKE '%proyecto_area%' OR VIEW_DEFINITION IS NULL);
+
+SELECT TRIGGER_NAME FROM information_schema.TRIGGERS
+WHERE TRIGGER_SCHEMA=DATABASE()
+AND (ACTION_STATEMENT LIKE '%proyecto_area%' OR EVENT_OBJECT_TABLE='proyecto_area');
+
+SELECT EVENT_NAME FROM information_schema.EVENTS
+WHERE EVENT_SCHEMA=DATABASE() AND (EVENT_DEFINITION LIKE '%proyecto_area%' OR EVENT_DEFINITION IS NULL);
+
+SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME
+FROM information_schema.KEY_COLUMN_USAGE
+WHERE REFERENCED_TABLE_SCHEMA=DATABASE() AND REFERENCED_TABLE_NAME='proyecto_area';
+
+SELECT `key`, JSON_UNQUOTE(JSON_EXTRACT(payload,'$.phase')) AS phase
+FROM auth_migration_backup WHERE `key`='project_single_area_0007';
+
+SELECT COUNT(*) AS projects FROM proyecto;
+SELECT COUNT(*) AS worker_area_associations FROM trabajador_area;

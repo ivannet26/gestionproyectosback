@@ -121,15 +121,6 @@ class TaskDependency(models.Model):
         db_table = "dependencia_actividad"
 
 
-class ProjectArea(models.Model):
-    pk = models.CompositePrimaryKey("project_id", "area_id")
-    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
-    area = models.ForeignKey(Area, on_delete=models.DO_NOTHING, db_constraint=False, db_column="area_id")
-
-    class Meta:
-        db_table = "proyecto_area"
-
-
 class ProjectRequirement(models.Model):
     project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
     name = models.CharField(max_length=120, db_column="nombre")
