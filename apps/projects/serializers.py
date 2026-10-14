@@ -12,8 +12,11 @@ class LabelSerializer(StrictSerializer):
 class ProjectCreateSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
-    end_date = serializers.DateField()
-    area_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), allow_empty=False, max_length=100)
+    end_date = serializers.DateField(required=False, allow_null=True, default=None)
+    area_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), allow_empty=False, max_length=1,
+        error_messages={"empty": "Selecciona un área", "max_length": "Selecciona exactamente un área"},
+    )
     mode = serializers.ChoiceField(choices=("available", "assigned"))
     worker_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=200)
     worker_contribute = serializers.BooleanField(default=False)
@@ -27,8 +30,8 @@ class ProjectCreateSerializer(StrictSerializer):
                 {"worker_ids": "Selecciona al menos un trabajador para crear con asignados"}
             )
         if attrs["mode"] == "available" and attrs["worker_ids"]:
-            raise serializers.ValidationError({"worker_ids": "Publicar por áreas no asigna participantes"})
-        if attrs["end_date"] < timezone.localdate():
+            raise serializers.ValidationError({"worker_ids": "Publicar por área no asigna participantes"})
+        if attrs["end_date"] is not None and attrs["end_date"] < timezone.localdate():
             raise serializers.ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
         return attrs
 
@@ -63,6 +66,7 @@ class TaskEditSerializer(StrictSerializer):
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     priority = serializers.IntegerField(min_value=1, max_value=4, required=False)
     due_date = serializers.DateField(required=False)
+    start_date = serializers.DateField(required=False)
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, required=False)
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
     labels = LabelSerializer(many=True, required=False, max_length=50)

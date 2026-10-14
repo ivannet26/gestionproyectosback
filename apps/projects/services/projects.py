@@ -11,16 +11,13 @@ from apps.organization.services.areas import active_area_ids
 from apps.workers.models import Worker
 from apps.workers.services.access import eligible_workers
 
-from ..models import Project, ProjectArea, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
+from ..models import Project, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
 from .access import can_create_tasks, require_admin
 from .audit import audit_actor
 from .statuses import status_configuration
 
 
 def project_areas(project):
-    ids = ProjectArea.objects.filter(project=project).values_list("area_id", flat=True)
-    if ids.exists():
-        return Area.objects.filter(pk__in=ids)
     return Area.objects.filter(pk=project.area_id)
 
 
@@ -29,7 +26,7 @@ def eligible_project_workers(project):
     return eligible_workers(areas) if areas else Worker.objects.none()
 
 
-def project_snapshot(project, user, detailed=False):
+def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=None):
     admin = user.global_role == "ADMINISTRADOR"
     result = {
         "id": project.pk,
@@ -39,13 +36,13 @@ def project_snapshot(project, user, detailed=False):
         "end_date": project.end_date,
         "state_code": project.state_code,
         "available": project.available,
-        "areas": list(project_areas(project).values("id", "name")),
+        "areas": list(project_areas(project).values("id", "name")) if areas is None else areas,
         "worker_edit": project.worker_edit,
         "worker_state": project.worker_state,
         "worker_create": project.worker_create,
         "permissions": {
             "manage": admin and project.state_code not in ("FINALIZADO", "CANCELADO"),
-            "create_tasks": can_create_tasks(user, project),
+            "create_tasks": can_create_tasks(user, project) if create_tasks is None else create_tasks,
         },
     }
     if detailed:
@@ -61,12 +58,39 @@ def project_snapshot(project, user, detailed=False):
     return result
 
 
+def project_snapshots(projects, user):
+    projects = list(projects.select_related("area"))
+    role = user.global_role
+    memberships = set()
+    if role == "TRABAJADOR":
+        memberships = set(
+            ProjectMember.objects.filter(
+                project__in=projects, worker_id=user.worker_id, active=True, worker__active=True,
+            ).values_list("project_id", flat=True)
+        )
+    return [
+        project_snapshot(
+            project, user,
+            areas=[{"id": project.area_id, "name": project.area.name}],
+            create_tasks=project.state_code not in ("FINALIZADO", "CANCELADO") and (
+                role == "ADMINISTRADOR"
+                or (role == "TRABAJADOR" and project.worker_create and project.pk in memberships)
+            ),
+        )
+        for project in projects
+    ]
+
+
 def create_project(user, data):
     require_admin(user)
+    if len(data.get("area_ids", [])) != 1:
+        raise ValidationError({"area_ids": "Selecciona exactamente un área"})
+    area_id = data["area_ids"][0]
+    end_date = data.get("end_date")
     with audit_actor(user), transaction.atomic():
         ProjectTaskStatus.objects.exists()
         start_date = timezone.localdate()
-        if data["end_date"] < start_date:
+        if end_date is not None and end_date < start_date:
             raise ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
         list(Area.objects.select_for_update().filter(pk__in=data["area_ids"]).order_by("pk"))
         areas = active_area_ids(data["area_ids"])
@@ -74,7 +98,7 @@ def create_project(user, data):
         list(User.objects.select_for_update().filter(worker_id__in=data["worker_ids"]).order_by("pk"))
         workers = list(eligible_workers(areas).filter(pk__in=data["worker_ids"]))
         if len(workers) != len(data["worker_ids"]):
-            raise ValidationError({"worker_ids": "Hay trabajadores no elegibles para las áreas seleccionadas"})
+            raise ValidationError({"worker_ids": "Hay trabajadores no elegibles para el área seleccionada"})
         if (
             not ProjectType.objects.filter(pk="GENERAL").exists()
             or not ProjectState.objects.filter(pk="PLANIFICADO", terminal=False).exists()
@@ -86,10 +110,10 @@ def create_project(user, data):
             code=f"GM-{uuid4().hex}",
             name=data["name"],
             description=data["description"],
-            area_id=data["area_ids"][0],
+            area_id=area_id,
             type_code="GENERAL",
             start_date=start_date,
-            end_date=data["end_date"],
+            end_date=end_date,
             available=data["mode"] == "available",
             worker_edit=False,
             worker_create=data["worker_contribute"],
@@ -97,17 +121,20 @@ def create_project(user, data):
             created_at=timezone.now(),
             updated_at=timezone.now(),
         )
-        ProjectArea.objects.bulk_create([ProjectArea(project=project, area_id=area_id) for area_id in areas])
         ProjectMember.objects.bulk_create([ProjectMember(project=project, worker=worker) for worker in workers])
     return project
 
 
 def worker_candidates(area_ids, search):
-    workers = eligible_workers(area_ids, search).order_by("last_names", "first_names")[:100]
+    if len(area_ids) != 1:
+        raise ValidationError({"area_ids": "Selecciona exactamente un área"})
+    workers = list(eligible_workers(area_ids, search).order_by("last_names", "first_names")[:100])
+    counts = dict(
+        ProjectMember.objects.filter(worker__in=workers, active=True, project__archived=False)
+        .values("worker_id").annotate(total=Count("project_id", distinct=True)).values_list("worker_id", "total")
+    )
     result = []
     for worker in workers:
-        related = ProjectMember.objects.filter(worker=worker, active=True, project__archived=False).aggregate(
-            total=Count("project_id", distinct=True)
-        )["total"]
+        related = counts.get(worker.pk, 0)
         result.append({"id": worker.pk, "name": f"{worker.first_names} {worker.last_names}", "project_count": related})
     return result
