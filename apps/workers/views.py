@@ -2,6 +2,8 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
+from django.db.models import Q
+
 from apps.authentication.security import IsAdministrator
 from .models import Worker
 from .serializers import WorkerSerializer, WorkerSpecialtySerializer
@@ -25,6 +27,21 @@ class WorkerViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(active=True)
             elif normalized in ("false", "0"):
                 queryset = queryset.filter(active=False)
+        search = self.request.query_params.get("search", "").strip()
+        for word in search.split():
+            queryset = queryset.filter(
+                Q(first_names__icontains=word) | Q(last_names__icontains=word) | Q(code__icontains=word)
+            )
+        disponible = self.request.query_params.get("disponible")
+        if disponible is not None:
+            from apps.projects.models import ProjectMember
+
+            members = ProjectMember.objects.values("worker_id")
+            normalized = disponible.strip().lower()
+            if normalized in ("true", "1"):
+                queryset = queryset.exclude(id__in=members)
+            elif normalized in ("false", "0"):
+                queryset = queryset.filter(id__in=members)
         return queryset
 
     @action(

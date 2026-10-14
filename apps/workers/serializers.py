@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from django.db import transaction
 from rest_framework import serializers
 
@@ -31,8 +33,10 @@ class WorkerSerializer(serializers.ModelSerializer):
             "specialties",
         ]
         read_only_fields = ["id"]
+        extra_kwargs = {"code": {"required": False}}
 
     def create(self, validated_data):
+        validated_data.setdefault("code", f"W-{uuid4().hex[:8].upper()}")
         specialties_data = validated_data.pop("worker_specialties", [])
         with transaction.atomic():
             worker = Worker.objects.create(**validated_data)
