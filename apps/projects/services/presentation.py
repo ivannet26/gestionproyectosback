@@ -3,6 +3,7 @@ from django.db.models import Q
 
 from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
 from .statuses import configured_states
+from .state_categories import definition_rules, transition_policy
 
 
 def task_snapshots(tasks, project, user):
@@ -21,15 +22,24 @@ def task_snapshots(tasks, project, user):
     can_create = not terminal and (
         admin or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
     )
-    states = {state["code"]: state["name"] for state in configured_states(project)}
-    transitions = TaskTransition.objects.filter(source__in={task.state_code for task in tasks}, target__in=states)
-    if not supervision:
-        transitions = transitions.filter(supervision_required=False)
+    definitions = configured_states(project)
+    states = {state["code"]: state["name"] for state in definitions}
+    metadata = {state["code"]: state for state in definitions}
+    rules = definition_rules(project)
+    sources = {task.state_code for task in tasks}
+    transitions = TaskTransition.objects.filter(
+        source__in=sources | {rules[code] for code in sources if code in rules},
+        target__in=set(states) | set(rules.values()),
+    )
+    legacy = {(item["source"], item["target"]): item for item in transitions.values(
+        "source", "target", "reason_required", "supervision_required",
+    )}
     transitions_by_state = defaultdict(list)
-    for transition in transitions.values("source", "target", "reason_required"):
-        transitions_by_state[transition["source"]].append({
-            "target": transition["target"], "reason_required": transition["reason_required"],
-        })
+    for source in {task.state_code for task in tasks}:
+        for target in states:
+            policy = transition_policy(source, target, rules, legacy)
+            if policy and (supervision or not policy["supervision_required"]):
+                transitions_by_state[source].append({"target": target, "reason_required": policy["reason_required"]})
     labels = defaultdict(list)
     assignees = defaultdict(dict)
     for task in tasks:
@@ -60,6 +70,7 @@ def task_snapshots(tasks, project, user):
             transitions_by_state[task.state_code], admin=admin, terminal=terminal, manageable=manageable,
             member=member, worker_edit=project.worker_edit, worker_state=project.worker_state, can_create=can_create,
             assignees=list(sorted(assignees[task.pk].values(), key=lambda worker: worker["id"])),
+            metadata=metadata.get(task.state_code, {}),
         )
         for task in tasks
     ]
@@ -67,7 +78,7 @@ def task_snapshots(tasks, project, user):
 
 def task_snapshot_from_context(
     task, user, states, labels, dependencies, transitions, *, admin, terminal, manageable,
-    member, worker_edit, worker_state, can_create, assignees,
+    member, worker_edit, worker_state, can_create, assignees, metadata,
 ):
     assigned = any(worker["id"] == user.worker_id for worker in assignees)
     can_edit = not terminal and (admin or (assigned and member and worker_edit))
@@ -79,6 +90,8 @@ def task_snapshot_from_context(
         "description": task.description or "",
         "state_code": task.state_code,
         "state_name": states.get(task.state_code, task.state_code),
+        "state_category": metadata.get("category"),
+        "state_color": metadata.get("color"),
         "priority": task.priority,
         "created_at": task.created_at,
         "start_date": task.start_date,
@@ -95,7 +108,7 @@ def task_snapshot_from_context(
             "edit": can_edit,
             "state": can_state,
             "assign": manageable,
-            "create_child": can_create and (admin or assigned) and task.state_code not in ("COMPLETADA", "CANCELADA"),
+            "create_child": can_create and (admin or assigned) and metadata.get("category") not in ("done", "closed"),
             "dependencies": manageable and not task.parent_id,
         },
     }

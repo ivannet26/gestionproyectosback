@@ -113,12 +113,39 @@ class DependencySerializer(StrictSerializer):
 class ProjectTaskStatusSerializer(StrictSerializer):
     code = serializers.CharField(max_length=20)
     name = serializers.CharField(max_length=70)
+    category = serializers.ChoiceField(choices=("not_started", "active", "done", "closed"), required=False)
+    color = serializers.RegexField(r"^#[0-9a-fA-F]{6}$", required=False)
+
+
+class StateReassignmentSerializer(StrictSerializer):
+    source = serializers.CharField(max_length=20)
+    target = serializers.CharField(max_length=20)
+    reason = serializers.CharField(max_length=500, allow_blank=True, default="")
+
+
+class TemplateStateSerializer(StrictSerializer):
+    name = serializers.CharField(max_length=70)
+    category = serializers.ChoiceField(choices=("not_started", "active", "done", "closed"))
+    color = serializers.RegexField(r"^#[0-9a-fA-F]{6}$")
+
+
+class TaskStatusTemplateSerializer(StrictSerializer):
+    name = serializers.CharField(max_length=70)
+    states = TemplateStateSerializer(many=True, max_length=50, allow_empty=True)
+    revision = serializers.IntegerField(min_value=1, required=False)
+
+    def validate(self, attrs):
+        names = [state["name"].casefold() for state in attrs["states"]]
+        if len(names) != len(set(names)):
+            raise serializers.ValidationError({"states": "No se permiten nombres duplicados"})
+        return attrs
 
 
 class ProjectTaskConfigurationSerializer(StrictSerializer):
     template = serializers.ChoiceField(choices=("standard", "custom"))
     revision = serializers.CharField(min_length=64, max_length=64)
     states = ProjectTaskStatusSerializer(many=True, required=False, default=list, max_length=50)
+    reassignments = StateReassignmentSerializer(many=True, default=list, max_length=50)
 
     def validate(self, attrs):
         states = attrs["states"]
@@ -130,4 +157,7 @@ class ProjectTaskConfigurationSerializer(StrictSerializer):
         names = [state["name"].casefold() for state in states]
         if len(codes) != len(set(codes)) or len(names) != len(set(names)):
             raise serializers.ValidationError({"states": "No se permiten códigos ni nombres duplicados"})
+        sources = [item["source"] for item in attrs["reassignments"]]
+        if len(sources) != len(set(sources)):
+            raise serializers.ValidationError({"reassignments": "No se permiten orígenes duplicados"})
         return attrs

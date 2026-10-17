@@ -7,6 +7,7 @@ from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor
 from .statuses import require_configured_state
+from .state_categories import definition_rules, state_rule, transition_policy
 from .assignees import primary_assignee, requested_assignees, save_assignees, task_assignee_ids, validate_assignees
 
 
@@ -59,26 +60,27 @@ def create_task(user, project_id, data):
         editable_project(project)
         require_task_creation(user, project)
         assignee_ids = requested_assignees(data)
+        rule = state_rule(project, data["state_code"])
         if user.global_role != "ADMINISTRADOR":
             if set(assignee_ids) - {user.worker_id}:
                 raise PermissionDenied("Solo el Administrador puede asignar tareas a otros trabajadores")
-            if data["state_code"] != "PENDIENTE":
+            if rule != "PENDIENTE":
                 raise ValidationError(
                     {"state_code": "Crea la tarea pendiente y usa las transiciones autorizadas para cambiar su estado"}
                 )
             assignee_ids = [user.worker_id]
         require_configured_state(project, data["state_code"])
-        if data["state_code"] in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
+        if rule in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
             raise ValidationError({"reason": "Indica un motivo para este estado"})
         parent = None
         if data["parent_id"]:
             parent = Task.objects.filter(project=project, pk=data["parent_id"], archived=False).first()
-            if parent is None or parent.state_code in ("COMPLETADA", "CANCELADA"):
+            if parent is None or state_rule(project, parent.state_code) in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"parent_id": "La tarea padre no está disponible en este proyecto"})
             require_task_permission(user, project, parent, "worker_create")
         start_date = parent.start_date if parent else project.start_date or timezone.localdate()
         validate_dates(project, start_date, data["due_date"], parent=parent)
-        validate_assignees(project, assignee_ids, data["state_code"],
+        validate_assignees(project, assignee_ids, rule,
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
         task = Task.objects.create(
             project=project,
@@ -92,7 +94,7 @@ def create_task(user, project_id, data):
             due_date=data["due_date"],
             responsible_id=primary_assignee(assignee_ids),
             reason=data["reason"] or None,
-            progress=100 if data["state_code"] == "COMPLETADA" else 0,
+            progress=100 if rule == "COMPLETADA" else 0,
         )
         save_assignees(task, assignee_ids)
         save_labels(task, data)
@@ -112,7 +114,7 @@ def edit_task(user, project_id, task_id, data):
         parent = task.parent if task.parent_id else None
         validate_dates(project, data.get("start_date", task.start_date), data.get("due_date", task.due_date), parent=parent, task=task)
         assignee_ids = requested_assignees(data, task)
-        validate_assignees(project, assignee_ids, task.state_code,
+        validate_assignees(project, assignee_ids, state_rule(project, task.state_code),
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
         task.responsible_id = primary_assignee(assignee_ids, task)
         for field in ("name", "description", "priority", "start_date", "due_date"):
@@ -140,52 +142,82 @@ def has_supervision(user, project):
 def validate_transition(user, project, task, target, reason):
     editable_project(project)
     require_configured_state(project, target)
-    if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target != "CANCELADA":
+    rules = definition_rules(project)
+    origin_rule = rules.get(task.state_code, task.state_code)
+    target_rule = rules.get(target, target)
+    completed_codes = {"COMPLETADA"} | {code for code, rule in rules.items() if rule == "COMPLETADA"}
+    pending_codes = {"PENDIENTE", "CANCELADA"} | {code for code, rule in rules.items() if rule == "PENDIENTE"}
+    if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target_rule != "CANCELADA":
         raise ValidationError({"detail": "El proyecto no permite ejecutar tareas en su estado actual"})
-    transition = TaskTransition.objects.filter(source=task.state_code, target=target).first()
+    legacy = {(item["source"], item["target"]): item for item in TaskTransition.objects.filter(
+        source__in=(task.state_code, origin_rule), target__in=(target, target_rule),
+    ).values("source", "target", "supervision_required", "reason_required")}
+    transition = transition_policy(task.state_code, target, rules, legacy)
     if transition is None:
         raise ValidationError({"state_code": "La transición no está permitida"})
-    if transition.supervision_required and not has_supervision(user, project):
+    if transition["supervision_required"] and not has_supervision(user, project):
         raise PermissionDenied("Esta transición requiere supervisión del proyecto")
-    if transition.reason_required and not reason:
+    if transition["reason_required"] and not reason:
         raise ValidationError({"reason": "Indica el motivo del cambio"})
-    validate_assignees(project, task_assignee_ids(task), target)
-    if target not in ("COMPLETADA", "CANCELADA"):
+    validate_assignees(project, task_assignee_ids(task), target_rule)
+    if target_rule not in ("COMPLETADA", "CANCELADA"):
         parent = task.parent
         visited = set()
         while parent:
-            if parent.pk in visited or parent.archived or parent.state_code in ("COMPLETADA", "CANCELADA"):
+            if parent.pk in visited or parent.archived or rules.get(parent.state_code, parent.state_code) in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"state_code": "Reabre primero las tareas padre"})
             visited.add(parent.pk)
             parent = parent.parent
     if (
-        target in ("EN_CURSO", "EN_REVISION", "COMPLETADA")
+        target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA")
         and TaskDependency.objects.filter(successor=task)
-        .exclude(predecessor__state_code="COMPLETADA", predecessor__archived=False)
+        .exclude(predecessor__state_code__in=completed_codes, predecessor__archived=False)
         .exists()
     ):
         raise ValidationError({"state_code": "Hay dependencias pendientes"})
     if (
-        task.state_code == "COMPLETADA"
+        origin_rule == "COMPLETADA" and target_rule != "COMPLETADA"
         and TaskDependency.objects.filter(predecessor=task, successor__archived=False)
-        .exclude(successor__state_code__in=("PENDIENTE", "CANCELADA"))
+        .exclude(successor__state_code__in=pending_codes)
         .exists()
     ):
         raise ValidationError({"state_code": "Replanifica primero las tareas sucesoras"})
     descendants = list(Task.objects.filter(project=project, archived=False).values("id", "parent_id", "state_code"))
     pending = [task.pk]
     visited = set()
-    incompatible = {"COMPLETADA", "CANCELADA"} if target == "COMPLETADA" else {"CANCELADA"}
-    while pending and target in ("COMPLETADA", "CANCELADA"):
+    incompatible = {"COMPLETADA", "CANCELADA"} if target_rule == "COMPLETADA" else {"CANCELADA"}
+    while pending and target_rule in ("COMPLETADA", "CANCELADA"):
         parent_id = pending.pop()
         if parent_id in visited:
             raise ValidationError({"state_code": "La jerarquía contiene un ciclo"})
         visited.add(parent_id)
         for child in descendants:
             if child["parent_id"] == parent_id:
-                if child["state_code"] not in incompatible:
+                if rules.get(child["state_code"], child["state_code"]) not in incompatible:
                     raise ValidationError({"state_code": "Hay subtareas incompatibles con el cierre"})
                 pending.append(child["id"])
+
+
+def apply_state_change(project, task, target, reason, nested=False):
+    if connection.vendor == "mysql":
+        procedure = "sp_aplicar_estado_actividad" if nested else "sp_cambiar_estado_actividad"
+        with connection.cursor() as cursor:
+            cursor.callproc(procedure, [project.pk, task.pk, target, reason or None])
+            while cursor.nextset():
+                pass
+        task.refresh_from_db()
+        return
+    rules = definition_rules(project)
+    origin = rules.get(task.state_code, task.state_code)
+    destination = rules.get(target, target)
+    task.state_code = target
+    task.reason = reason or None
+    if destination == "COMPLETADA":
+        task.progress = 100
+    elif destination in ("PENDIENTE", "CANCELADA") or origin in ("COMPLETADA", "CANCELADA"):
+        task.progress = 0
+    task.updated_at = timezone.now()
+    task.save()
 
 
 def change_task_state(user, project_id, task_id, data):
@@ -194,28 +226,15 @@ def change_task_state(user, project_id, task_id, data):
         task = task_for_user(user, project, task_id)
         require_task_permission(user, project, task, "worker_state")
         validate_transition(user, project, task, data["state_code"], data["reason"])
-        with audit_actor(user), connection.cursor() as cursor:
-            cursor.callproc(
-                "sp_cambiar_estado_actividad", [project.pk, task.pk, data["state_code"], data["reason"] or None]
-            )
-            while cursor.nextset():
-                pass
-        task.refresh_from_db()
+        with audit_actor(user):
+            apply_state_change(project, task, data["state_code"], data["reason"])
         return task
     with audit_actor(user), transaction.atomic():
         project = project_for_user(user, project_id, lock=True)
         task = task_for_user(user, project, task_id)
         require_task_permission(user, project, task, "worker_state")
         validate_transition(user, project, task, data["state_code"], data["reason"])
-        origin = task.state_code
-        task.state_code = data["state_code"]
-        task.reason = data["reason"] or None
-        if task.state_code == "COMPLETADA":
-            task.progress = 100
-        elif task.state_code in ("PENDIENTE", "CANCELADA") or origin in ("COMPLETADA", "CANCELADA"):
-            task.progress = 0
-        task.updated_at = timezone.now()
-        task.save()
+        apply_state_change(project, task, data["state_code"], data["reason"])
     return task
 
 

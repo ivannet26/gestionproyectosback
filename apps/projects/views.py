@@ -15,6 +15,7 @@ from .serializers import (
     TaskCreateSerializer,
     TaskEditSerializer,
     TaskStateSerializer,
+    TaskStatusTemplateSerializer,
 )
 from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
 from .services.favorites import set_project_favorite
@@ -22,6 +23,7 @@ from .services.presentation import task_snapshot, task_snapshots
 from .services.projects import create_project, project_snapshot, project_snapshots, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
 from .services.statuses import catalog_states, configure_task_states, status_configuration
+from .services.state_templates import project_templates, save_template
 
 
 class ProjectApiView(APIView):
@@ -126,6 +128,27 @@ class ProjectTaskStatesView(ProjectApiView):
         serializer = ProjectTaskConfigurationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(configure_task_states(request.user, project_id, serializer.validated_data))
+
+
+class TaskStatusTemplatesView(ProjectApiView):
+    permission_classes = [IsAdministrator]
+
+    def get(self, request, project_id):
+        return Response(project_templates(request.user, project_id))
+
+    def post(self, request, project_id):
+        serializer = TaskStatusTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(save_template(request.user, project_id, serializer.validated_data), status=201)
+
+
+class TaskStatusTemplateView(ProjectApiView):
+    permission_classes = [IsAdministrator]
+
+    def put(self, request, project_id, template_id):
+        serializer = TaskStatusTemplateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(save_template(request.user, project_id, serializer.validated_data, template_id))
 
 
 class TaskDetailView(ProjectApiView):

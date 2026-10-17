@@ -161,6 +161,8 @@ class ProjectTaskStatus(models.Model):
     code = models.CharField(max_length=20, db_column="estado_codigo")
     name = models.CharField(max_length=70, db_column="nombre")
     position = models.PositiveSmallIntegerField(db_column="orden")
+    category = models.CharField(max_length=20, default="active", db_column="categoria")
+    color = models.CharField(max_length=7, default="#737373")
 
     class Meta:
         db_table = "proyecto_estado_actividad"
@@ -169,6 +171,27 @@ class ProjectTaskStatus(models.Model):
             models.UniqueConstraint(fields=["project", "name"], name="uq_proyecto_estado_nombre"),
             models.UniqueConstraint(fields=["project", "position"], name="uq_proyecto_estado_orden"),
         ]
+
+
+class TaskStateDefinition(models.Model):
+    code = models.CharField(primary_key=True, max_length=20, db_column="estado_codigo")
+    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
+    category = models.CharField(max_length=20, db_column="categoria")
+
+    class Meta:
+        db_table = "estado_actividad_definicion"
+
+
+class TaskStatusTemplate(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
+    name = models.CharField(max_length=70, db_column="nombre")
+    states = models.JSONField(db_column="estados")
+    revision = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        db_table = "proyecto_plantilla_estados"
+        constraints = [models.UniqueConstraint(fields=["project", "name"], name="uq_proyecto_plantilla_nombre")]
+        ordering = ["name", "id"]
 
 
 class TaskLabel(models.Model):

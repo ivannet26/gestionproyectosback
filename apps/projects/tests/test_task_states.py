@@ -50,7 +50,7 @@ class TaskStateFlowTests(unittest.TestCase):
         configuration = self.configuration(project)
         self.assertEqual(configuration["template"], "standard")
         self.assertEqual(
-            configuration["states"][:3],
+            [{key: state[key] for key in ("code", "name")} for state in configuration["states"][:3]],
             [
                 {"code": "PENDIENTE", "name": "PENDIENTE"},
                 {"code": "EN_CURSO", "name": "EN CURSO"},
@@ -139,7 +139,7 @@ class TaskStateFlowTests(unittest.TestCase):
         ]
         response = self.configure(project, states)
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(self.configuration(project)["states"], states)
+        self.assertEqual([{key: state[key] for key in ("code", "name")} for state in self.configuration(project)["states"]], states)
         self.assertEqual(self.configuration(other)["template"], "standard")
         task.refresh_from_db()
         self.assertEqual(task.state_code, "PENDIENTE")

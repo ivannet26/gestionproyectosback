@@ -16,7 +16,7 @@ from apps.workers.models import Worker, WorkerArea
 from apps.workers.services.areas import area_summaries, area_summary
 from apps.projects.models import (
     Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType,
-    Task, TaskAssignee, TaskDependency, TaskLabel, TaskState, TaskTransition,
+    Task, TaskAssignee, TaskDependency, TaskLabel, TaskState, TaskTransition, TaskStateDefinition, TaskStatusTemplate,
 )
 from . import test_projects
 
@@ -25,7 +25,7 @@ class PerformanceRegressionTests(unittest.TestCase):
     tables = [
         Area, Worker, WorkerArea, User, Role, UserRole, AuthToken, Invitation, RecoveryRequest, AuthThrottle,
         ProjectType, ProjectState, TaskState, TaskTransition, Project, ProjectFavorite, ProjectMember, ProjectRequirement,
-        ProjectTaskStatus, Task, TaskAssignee, TaskDependency, TaskLabel,
+        ProjectTaskStatus, TaskStateDefinition, TaskStatusTemplate, Task, TaskAssignee, TaskDependency, TaskLabel,
     ]
 
     @classmethod

@@ -26,6 +26,8 @@ from apps.projects.models import (
     TaskDependency,
     TaskLabel,
     TaskState,
+    TaskStateDefinition,
+    TaskStatusTemplate,
     TaskTransition,
 )
 from apps.projects.serializers import ProjectCreateSerializer
@@ -56,6 +58,8 @@ class ProjectFlowTests(unittest.TestCase):
             ProjectMember,
             ProjectRequirement,
             ProjectTaskStatus,
+            TaskStateDefinition,
+            TaskStatusTemplate,
             Task,
             TaskAssignee,
             TaskDependency,
