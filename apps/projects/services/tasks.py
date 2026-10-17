@@ -1,4 +1,4 @@
-from django.db import connection, transaction
+from django.db import connection, models, transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
@@ -17,15 +17,19 @@ def editable_project(project):
 
 
 def validate_dates(project, start_date, due_date, parent=None, task=None):
-    if due_date < start_date or (project.end_date and due_date > project.end_date):
+    if due_date and (due_date < start_date or (project.end_date and due_date > project.end_date)):
         raise ValidationError({"due_date": "La fecha límite queda fuera del periodo permitido"})
+    if project.end_date and start_date > project.end_date:
+        raise ValidationError({"start_date": "La tarea debe respetar el fin del proyecto"})
     if project.start_date and start_date < project.start_date:
         raise ValidationError({"start_date": "La tarea debe respetar el inicio del proyecto"})
     if parent and start_date < parent.start_date:
         raise ValidationError({"start_date": "La subtarea debe respetar el inicio de su tarea padre"})
-    if parent and (start_date < parent.start_date or due_date > parent.due_date):
+    if parent and parent.due_date and (start_date > parent.due_date or due_date and due_date > parent.due_date):
         raise ValidationError({"due_date": "La subtarea debe quedar dentro del periodo de su tarea padre"})
-    if task and Task.objects.filter(parent=task, archived=False, due_date__gt=due_date).exists():
+    if task and due_date and Task.objects.filter(parent=task, archived=False).filter(
+        models.Q(due_date__gt=due_date) | models.Q(start_date__gt=due_date)
+    ).exists():
         raise ValidationError({"due_date": "La fecha dejaría subtareas fuera del periodo padre"})
     if task and Task.objects.filter(parent=task, archived=False, start_date__lt=start_date).exists():
         raise ValidationError({"start_date": "El inicio dejaría subtareas fuera del periodo padre"})
@@ -79,7 +83,7 @@ def create_task(user, project_id, data):
                 raise ValidationError({"parent_id": "La tarea padre no está disponible en este proyecto"})
             require_task_permission(user, project, parent, "worker_create")
         start_date = parent.start_date if parent else project.start_date or timezone.localdate()
-        validate_dates(project, start_date, data["due_date"], parent=parent)
+        validate_dates(project, start_date, data.get("due_date"), parent=parent)
         validate_assignees(project, assignee_ids, rule,
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
         task = Task.objects.create(
@@ -89,9 +93,9 @@ def create_task(user, project_id, data):
             name=data["name"],
             description=data.get("description", "") or None,
             state_code=data["state_code"],
-            priority=data["priority"],
+            priority=data.get("priority"),
             start_date=start_date,
-            due_date=data["due_date"],
+            due_date=data.get("due_date"),
             responsible_id=primary_assignee(assignee_ids),
             reason=data["reason"] or None,
             progress=100 if rule == "COMPLETADA" else 0,

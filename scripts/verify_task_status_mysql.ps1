@@ -1,3 +1,4 @@
+param([ValidateSet('apps.projects.tests.test_state_templates_mysql', 'apps.projects.tests.test_quick_tasks_mysql')][string]$TestModule = 'apps.projects.tests.test_state_templates_mysql')
 $ErrorActionPreference = 'Stop'
 $taskStatusContainer = $null
 $taskStatusRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -30,7 +31,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la base nueva dedicada.' }
     Push-Location $taskStatusRoot
     try {
-        & ./.venv/Scripts/python.exe manage.py test apps.projects.tests.test_state_templates_mysql --settings=config.settings_test_mysql_templates --noinput
+        & ./.venv/Scripts/python.exe manage.py test $TestModule --settings=config.settings_test_mysql_templates --noinput
         if ($LASTEXITCODE -ne 0) { throw 'Fallaron las pruebas MySQL; revisa el resultado anterior.' }
     } finally { Pop-Location }
 } finally {

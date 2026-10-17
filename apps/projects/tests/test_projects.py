@@ -363,7 +363,7 @@ class ProjectFlowTests(unittest.TestCase):
         self.assertEqual(self.request("get", f"{project.pk}/", user=self.worker).status_code, 404)
         self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
 
-    def test_tasks_without_project_end_keep_required_date_and_parent_bounds(self):
+    def test_tasks_without_project_end_keep_supplied_date_and_parent_bounds(self):
         project = self.project(
             mode="assigned", worker_ids=[self.worker.worker_id], worker_contribute=True, end_date=None,
         )
@@ -376,7 +376,7 @@ class ProjectFlowTests(unittest.TestCase):
             self.request("post", f"{project.pk}/tasks/", self.task_payload(parent_id=parent_id), self.worker).status_code,
             201,
         )
-        for due_date, parent in ((None, None), (str(self.today - timedelta(days=1)), None),
+        for due_date, parent in (("", None), (str(self.today - timedelta(days=1)), None),
                                  (str(far_date + timedelta(days=1)), parent_id)):
             with self.subTest(due_date=due_date, parent=parent):
                 invalid = self.request(

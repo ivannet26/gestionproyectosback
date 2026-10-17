@@ -39,7 +39,7 @@ class TaskInlineTests(unittest.TestCase):
             {"start_date": None}, {"start_date": ""}, {"start_date": "2026-02-30"},
             {"start_date": str(original - timedelta(days=1))},
             {"start_date": str(task.due_date + timedelta(days=1))},
-            {"due_date": None}, {"priority": None},
+            {"due_date": ""}, {"priority": ""}, {"priority": 0},
         ):
             with self.subTest(data=data):
                 self.assertEqual(self.fixture.request("patch", path, data, self.fixture.admin).status_code, 400)
