@@ -46,20 +46,43 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         require_isolated_mysql()
-        cls.tables = [apps.get_model(label) for label in (
-            "organization.Area", "workers.Worker", "workers.WorkerArea", "autenticacion.User",
-            "autenticacion.Role", "autenticacion.UserRole", "autenticacion.AuthToken", "proyectos.ProjectType",
-            "proyectos.ProjectState", "proyectos.TaskState", "proyectos.TaskTransition", "proyectos.Project",
-            "proyectos.ProjectMember", "proyectos.ProjectRequirement", "proyectos.ProjectTaskStatus",
-            "proyectos.Task", "proyectos.TaskDependency", "proyectos.TaskLabel", "autenticacion.MigrationBackup",
-        )]
+        cls.tables = [
+            apps.get_model(label)
+            for label in (
+                "organization.Area",
+                "workers.Worker",
+                "workers.WorkerArea",
+                "autenticacion.User",
+                "autenticacion.Role",
+                "autenticacion.UserRole",
+                "autenticacion.AuthToken",
+                "proyectos.ProjectType",
+                "proyectos.ProjectState",
+                "proyectos.TaskState",
+                "proyectos.TaskTransition",
+                "proyectos.Project",
+                "proyectos.ProjectMember",
+                "proyectos.ProjectRequirement",
+                "proyectos.ProjectTaskStatus",
+                "proyectos.Task",
+                "proyectos.TaskDependency",
+                "proyectos.TaskLabel",
+                "autenticacion.MigrationBackup",
+            )
+        ]
         with connection.schema_editor() as editor:
             for model in cls.tables:
                 editor.create_model(model)
         MigrationRecorder(connection).ensure_schema()
         with connection.cursor() as cursor:
-            cursor.execute((SQL_ROOT / "authentication/migrations/sql/v_trabajador_area_autorizada.sql").read_text(encoding="utf-8"))
-            cursor.execute("CREATE TABLE test_entregable (actividad_id BIGINT NOT NULL, obligatorio BOOLEAN NOT NULL, estado_revision VARCHAR(30) NOT NULL)")
+            cursor.execute(
+                (SQL_ROOT / "authentication/migrations/sql/v_trabajador_area_autorizada.sql").read_text(
+                    encoding="utf-8"
+                )
+            )
+            cursor.execute(
+                "CREATE TABLE test_entregable (actividad_id BIGINT NOT NULL, obligatorio BOOLEAN NOT NULL, estado_revision VARCHAR(30) NOT NULL)"
+            )
             cursor.execute("CREATE SQL SECURITY INVOKER VIEW v_estado_entregable AS SELECT * FROM test_entregable")
         cls.state = MigrationLoader(None).project_state([("proyectos", "0006_task_descriptions_and_project_states")])
 
@@ -82,7 +105,9 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
         self.maintenance.start()
         self.addCleanup(self.maintenance.stop)
         with connection.cursor() as cursor:
-            cursor.execute("CREATE TABLE proyecto_area (area_id BIGINT NOT NULL, proyecto_id BIGINT NOT NULL, PRIMARY KEY(proyecto_id,area_id), CONSTRAINT fk_pa_project FOREIGN KEY(proyecto_id) REFERENCES proyecto(id), CONSTRAINT fk_pa_area FOREIGN KEY(area_id) REFERENCES area(id))")
+            cursor.execute(
+                "CREATE TABLE proyecto_area (area_id BIGINT NOT NULL, proyecto_id BIGINT NOT NULL, PRIMARY KEY(proyecto_id,area_id), CONSTRAINT fk_pa_project FOREIGN KEY(proyecto_id) REFERENCES proyecto(id), CONSTRAINT fk_pa_area FOREIGN KEY(area_id) REFERENCES area(id))"
+            )
             migration.helpers.recreate(cursor, migration.PROCEDURE, migration.source(False))
 
     def tearDown(self):
@@ -95,7 +120,9 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
 
     def associate(self, project, area=None):
         with connection.cursor() as cursor:
-            cursor.execute("INSERT INTO proyecto_area(proyecto_id,area_id) VALUES(%s,%s)", [project.pk, (area or self.area).pk])
+            cursor.execute(
+                "INSERT INTO proyecto_area(proyecto_id,area_id) VALUES(%s,%s)", [project.pk, (area or self.area).pk]
+            )
 
     def apply(self):
         instance = migration.Migration("0007_project_single_area", "proyectos")
@@ -117,7 +144,9 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
         self.assertEqual(project.area_id, self.area.pk)
 
     def test_migration_retires_table_after_procedure_and_preserves_data(self):
-        project = self.project(mode="assigned", worker_ids=[self.worker.worker_id], worker_contribute=True, end_date=None)
+        project = self.project(
+            mode="assigned", worker_ids=[self.worker.worker_id], worker_contribute=True, end_date=None
+        )
         self.associate(project)
         task = self.task(project, responsible_id=self.worker.worker_id)
         WorkerArea.objects.create(worker=self.worker.worker, area=self.area)
@@ -173,8 +202,16 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
         definitions = (
             ("VIEW", "test_pa_view", "CREATE VIEW test_pa_view AS SELECT * FROM proyecto_area"),
             ("PROCEDURE", "test_pa_proc", "CREATE PROCEDURE test_pa_proc() SELECT * FROM proyecto_area"),
-            ("TRIGGER", "test_pa_trigger", "CREATE TRIGGER test_pa_trigger BEFORE INSERT ON proyecto_area FOR EACH ROW SET NEW.area_id=NEW.area_id"),
-            ("EVENT", "test_pa_event", "CREATE EVENT test_pa_event ON SCHEDULE EVERY 1 DAY DISABLE DO DELETE FROM proyecto_area WHERE 1=0"),
+            (
+                "TRIGGER",
+                "test_pa_trigger",
+                "CREATE TRIGGER test_pa_trigger BEFORE INSERT ON proyecto_area FOR EACH ROW SET NEW.area_id=NEW.area_id",
+            ),
+            (
+                "EVENT",
+                "test_pa_event",
+                "CREATE EVENT test_pa_event ON SCHEDULE EVERY 1 DAY DISABLE DO DELETE FROM proyecto_area WHERE 1=0",
+            ),
         )
         for kind, name, sql in definitions:
             with self.subTest(kind=kind), connection.cursor() as cursor:
@@ -189,8 +226,10 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
     def test_modified_procedure_security_or_body_blocks_retirement(self):
         project = self.project()
         self.associate(project)
-        for sql in (migration.source(False).replace("SQL SECURITY INVOKER", "SQL SECURITY DEFINER"),
-                    migration.source(False).replace("START TRANSACTION;", "START TRANSACTION; SET @unexpected=1;")):
+        for sql in (
+            migration.source(False).replace("SQL SECURITY INVOKER", "SQL SECURITY DEFINER"),
+            migration.source(False).replace("START TRANSACTION;", "START TRANSACTION; SET @unexpected=1;"),
+        ):
             with connection.cursor() as cursor:
                 migration.helpers.recreate(cursor, migration.PROCEDURE, sql)
             with self.assertRaisesRegex(RuntimeError, "baseline"):
@@ -203,17 +242,24 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
         WorkerArea.objects.create(worker=self.outsider.worker, area=self.area)
         WorkerArea.objects.create(worker=self.outsider.worker, area=self.other_area)
         for selected in (self.area, self.other_area):
-            project = self.project(area_ids=[selected.pk], mode="assigned", worker_ids=[self.outsider.worker_id], end_date=None)
+            project = self.project(
+                area_ids=[selected.pk], mode="assigned", worker_ids=[self.outsider.worker_id], end_date=None
+            )
             self.assertEqual(project.area_id, selected.pk)
             self.assertEqual(self.request("get", f"{project.pk}/", user=self.outsider).status_code, 200)
-            self.assertEqual(set(eligible_project_workers(project).values_list("pk", flat=True)) & {self.outsider.worker_id}, {self.outsider.worker_id})
+            self.assertEqual(
+                set(eligible_project_workers(project).values_list("pk", flat=True)) & {self.outsider.worker_id},
+                {self.outsider.worker_id},
+            )
         available = self.project()
         self.assertEqual(self.request("get", f"{available.pk}/", user=self.worker).status_code, 200)
         WorkerArea.objects.filter(worker=self.outsider.worker, area=self.area).delete()
         self.assertEqual(self.request("get", f"{available.pk}/", user=self.outsider).status_code, 404)
         self.assertEqual(self.request("post", data=self.project_payload(), user=self.worker).status_code, 403)
         for areas in ([], [self.area.pk, self.other_area.pk]):
-            self.assertEqual(self.request("post", data=self.project_payload(area_ids=areas), user=self.admin).status_code, 400)
+            self.assertEqual(
+                self.request("post", data=self.project_payload(area_ids=areas), user=self.admin).status_code, 400
+            )
         self.assertNotIn("proyecto_area", connection.introspection.table_names())
 
     def test_sql_area_check_uses_project_and_preserves_worker_multiple_areas(self):
@@ -338,7 +384,9 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "columns"):
                 self.apply()
             cursor.execute("ALTER TABLE proyecto_area DROP COLUMN extra_data")
-            cursor.execute("CREATE TABLE test_pa_child (proyecto_id BIGINT NOT NULL, area_id BIGINT NOT NULL, FOREIGN KEY(proyecto_id,area_id) REFERENCES proyecto_area(proyecto_id,area_id))")
+            cursor.execute(
+                "CREATE TABLE test_pa_child (proyecto_id BIGINT NOT NULL, area_id BIGINT NOT NULL, FOREIGN KEY(proyecto_id,area_id) REFERENCES proyecto_area(proyecto_id,area_id))"
+            )
             try:
                 with self.assertRaisesRegex(RuntimeError, "Foreign keys"):
                     self.apply()
@@ -362,13 +410,15 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
 
     def test_assignments_reject_workers_outside_project_area_after_retirement(self):
         self.apply()
-        response = self.request("post", data=self.project_payload(
-            mode="assigned", worker_ids=[self.outsider.worker_id]), user=self.admin)
+        response = self.request(
+            "post", data=self.project_payload(mode="assigned", worker_ids=[self.outsider.worker_id]), user=self.admin
+        )
         self.assertEqual(response.status_code, 400, response.content)
         self.assertFalse(Project.objects.exists())
         project = self.assigned_project(worker_contribute=True)
-        response = self.request("post", f"{project.pk}/tasks/",
-                                self.task_payload(responsible_id=self.outsider.worker_id), self.admin)
+        response = self.request(
+            "post", f"{project.pk}/tasks/", self.task_payload(responsible_id=self.outsider.worker_id), self.admin
+        )
         self.assertEqual(response.status_code, 400, response.content)
         task = self.task(project, responsible_id=self.worker.worker_id)
         self.worker.is_active = False
@@ -448,8 +498,9 @@ class ProjectSingleAreaReferenceMySQLTests(unittest.TestCase):
                 "SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE FROM information_schema.COLUMNS "
                 "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='proyecto_area' ORDER BY ORDINAL_POSITION"
             )
-            self.assertEqual(cursor.fetchall(), (("area_id", "bigint unsigned", "NO"),
-                                                ("proyecto_id", "bigint unsigned", "NO")))
+            self.assertEqual(
+                cursor.fetchall(), (("area_id", "bigint unsigned", "NO"), ("proyecto_id", "bigint unsigned", "NO"))
+            )
             cursor.execute(
                 "SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE "
                 "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='proyecto_area' "

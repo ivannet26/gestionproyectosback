@@ -111,7 +111,9 @@ def consume_stored(token, purpose, *, user=None):
             .first()
         )
         if (
-            record is None or record.consumed_at is not None or record.expires_at <= timezone.now()
+            record is None
+            or record.consumed_at is not None
+            or record.expires_at <= timezone.now()
             or (user is not None and user.pk != record.user_id)
         ):
             raise InvalidToken

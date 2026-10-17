@@ -11,14 +11,20 @@ def task_snapshots(tasks, project, user):
     admin = user.global_role == "ADMINISTRADOR"
     terminal = project.state_code in ("FINALIZADO", "CANCELADO")
     manageable = admin and not terminal
-    membership = None if admin else (
-        ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True)
-        .values("project_role", "worker__active").first()
+    membership = (
+        None
+        if admin
+        else (
+            ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True)
+            .values("project_role", "worker__active")
+            .first()
+        )
     )
     member = membership is not None
     supervision = admin or (member and membership["project_role"] in ("RESPONSABLE", "REVISOR"))
     can_create = not terminal and (
-        admin or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
+        admin
+        or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
     )
     states = {state["code"]: state["name"] for state in configured_states(project)}
     transitions = TaskTransition.objects.filter(source__in={task.state_code for task in tasks}, target__in=states)
@@ -26,9 +32,12 @@ def task_snapshots(tasks, project, user):
         transitions = transitions.filter(supervision_required=False)
     transitions_by_state = defaultdict(list)
     for transition in transitions.values("source", "target", "reason_required"):
-        transitions_by_state[transition["source"]].append({
-            "target": transition["target"], "reason_required": transition["reason_required"],
-        })
+        transitions_by_state[transition["source"]].append(
+            {
+                "target": transition["target"],
+                "reason_required": transition["reason_required"],
+            }
+        )
     labels = defaultdict(list)
     for label in TaskLabel.objects.filter(task__in=tasks).values("task_id", "id", "requirement_id", "name", "kind"):
         labels[label.pop("task_id")].append(label)
@@ -40,17 +49,39 @@ def task_snapshots(tasks, project, user):
         dependencies_by_task[successor_id].append(predecessor_id)
     return [
         task_snapshot_from_context(
-            task, user, states, labels[task.pk], dependencies_by_task[task.pk],
-            transitions_by_state[task.state_code], admin=admin, terminal=terminal, manageable=manageable,
-            member=member, worker_edit=project.worker_edit, worker_state=project.worker_state, can_create=can_create,
+            task,
+            user,
+            states,
+            labels[task.pk],
+            dependencies_by_task[task.pk],
+            transitions_by_state[task.state_code],
+            admin=admin,
+            terminal=terminal,
+            manageable=manageable,
+            member=member,
+            worker_edit=project.worker_edit,
+            worker_state=project.worker_state,
+            can_create=can_create,
         )
         for task in tasks
     ]
 
 
 def task_snapshot_from_context(
-    task, user, states, labels, dependencies, transitions, *, admin, terminal, manageable,
-    member, worker_edit, worker_state, can_create,
+    task,
+    user,
+    states,
+    labels,
+    dependencies,
+    transitions,
+    *,
+    admin,
+    terminal,
+    manageable,
+    member,
+    worker_edit,
+    worker_state,
+    can_create,
 ):
     assigned = task.responsible_id == user.worker_id
     can_edit = not terminal and (admin or (assigned and member and worker_edit))

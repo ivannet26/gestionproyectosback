@@ -46,7 +46,9 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         },
     }
     if detailed:
-        members = ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project))
+        members = ProjectMember.objects.filter(
+            project=project, active=True, worker__in=eligible_project_workers(project)
+        )
         if not admin:
             members = members.filter(worker_id=user.worker_id)
         result["participants"] = [
@@ -65,14 +67,19 @@ def project_snapshots(projects, user):
     if role == "TRABAJADOR":
         memberships = set(
             ProjectMember.objects.filter(
-                project__in=projects, worker_id=user.worker_id, active=True, worker__active=True,
+                project__in=projects,
+                worker_id=user.worker_id,
+                active=True,
+                worker__active=True,
             ).values_list("project_id", flat=True)
         )
     return [
         project_snapshot(
-            project, user,
+            project,
+            user,
             areas=[{"id": project.area_id, "name": project.area.name}],
-            create_tasks=project.state_code not in ("FINALIZADO", "CANCELADO") and (
+            create_tasks=project.state_code not in ("FINALIZADO", "CANCELADO")
+            and (
                 role == "ADMINISTRADOR"
                 or (role == "TRABAJADOR" and project.worker_create and project.pk in memberships)
             ),
@@ -131,7 +138,9 @@ def worker_candidates(area_ids, search):
     workers = list(eligible_workers(area_ids, search).order_by("last_names", "first_names")[:100])
     counts = dict(
         ProjectMember.objects.filter(worker__in=workers, active=True, project__archived=False)
-        .values("worker_id").annotate(total=Count("project_id", distinct=True)).values_list("worker_id", "total")
+        .values("worker_id")
+        .annotate(total=Count("project_id", distinct=True))
+        .values_list("worker_id", "total")
     )
     result = []
     for worker in workers:

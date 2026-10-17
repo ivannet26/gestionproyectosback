@@ -52,8 +52,9 @@ def register_account(data, actor):
                 all_areas=data["all_areas"],
             )
             WorkerArea.objects.bulk_create([WorkerArea(worker=worker, area_id=area_id) for area_id in data["area_ids"]])
+            username = data["email"] if len(data["email"]) <= 80 else f"gm_{uuid4().hex}"
             user = User.objects.create(
-                worker=worker, username=f"gm_{uuid4().hex}", password=make_password(None), is_active=False
+                worker=worker, username=username, password=make_password(None), is_active=False
             )
             UserRole.objects.create(user=user, role_code=data["role"])
             Invitation.objects.create(user=user, created_by=actor, email_digest=email_digest(worker.email))

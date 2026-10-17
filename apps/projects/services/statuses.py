@@ -29,16 +29,13 @@ def status_configuration(project, user):
     saved = list(ProjectTaskStatus.objects.filter(project=project).values("code", "name"))
     states = saved or catalog_states()
     template = "custom" if saved else "standard"
-    revision = hashlib.sha256(
-        json.dumps([template, states], sort_keys=True, ensure_ascii=True).encode()
-    ).hexdigest()
+    revision = hashlib.sha256(json.dumps([template, states], sort_keys=True, ensure_ascii=True).encode()).hexdigest()
     return {
         "template": template,
         "states": states,
         "available_states": catalog_states(),
         "revision": revision,
-        "can_configure": user.global_role == "ADMINISTRADOR"
-        and project.state_code not in ("FINALIZADO", "CANCELADO"),
+        "can_configure": user.global_role == "ADMINISTRADOR" and project.state_code not in ("FINALIZADO", "CANCELADO"),
     }
 
 

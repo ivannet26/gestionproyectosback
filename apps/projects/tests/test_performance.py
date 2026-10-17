@@ -15,23 +15,51 @@ from apps.organization.models import Area
 from apps.workers.models import Worker, WorkerArea
 from apps.workers.services.areas import area_summaries, area_summary
 from apps.projects.models import (
-    Project, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType,
-    Task, TaskDependency, TaskLabel, TaskState, TaskTransition,
+    Project,
+    ProjectMember,
+    ProjectRequirement,
+    ProjectState,
+    ProjectTaskStatus,
+    ProjectType,
+    Task,
+    TaskDependency,
+    TaskLabel,
+    TaskState,
+    TaskTransition,
 )
 from . import test_projects
 
 
 class PerformanceRegressionTests(unittest.TestCase):
     tables = [
-        Area, Worker, WorkerArea, User, Role, UserRole, AuthToken, Invitation, RecoveryRequest, AuthThrottle,
-        ProjectType, ProjectState, TaskState, TaskTransition, Project, ProjectMember, ProjectRequirement,
-        ProjectTaskStatus, Task, TaskDependency, TaskLabel,
+        Area,
+        Worker,
+        WorkerArea,
+        User,
+        Role,
+        UserRole,
+        AuthToken,
+        Invitation,
+        RecoveryRequest,
+        AuthThrottle,
+        ProjectType,
+        ProjectState,
+        TaskState,
+        TaskTransition,
+        Project,
+        ProjectMember,
+        ProjectRequirement,
+        ProjectTaskStatus,
+        Task,
+        TaskDependency,
+        TaskLabel,
     ]
 
     @classmethod
     def setUpClass(cls):
         isolated_mysql = (
-            connection.vendor == "mysql" and connection.settings_dict["HOST"] == "127.0.0.1"
+            connection.vendor == "mysql"
+            and connection.settings_dict["HOST"] == "127.0.0.1"
             and connection.settings_dict["NAME"] == "gm_test_single_area"
         )
         isolated_sqlite = connection.vendor == "sqlite" and connection.settings_dict["NAME"] == ":memory:"
@@ -71,16 +99,28 @@ class PerformanceRegressionTests(unittest.TestCase):
 
     def project(self, number=0, **changes):
         return Project.objects.create(
-            code=f"PERF-{number}", name=f"Proyecto {number}", area=self.fixture.area,
-            type_code="GENERAL", start_date=self.fixture.today, end_date=None,
-            available=True, worker_create=True, worker_edit=True, worker_state=True, **changes,
+            code=f"PERF-{number}",
+            name=f"Proyecto {number}",
+            area=self.fixture.area,
+            type_code="GENERAL",
+            start_date=self.fixture.today,
+            end_date=None,
+            available=True,
+            worker_create=True,
+            worker_edit=True,
+            worker_state=True,
+            **changes,
         )
 
     def task(self, project, number, **changes):
         return Task.objects.create(
-            project=project, name=f"Tarea {number}", responsible=self.fixture.worker.worker,
-            start_date=self.fixture.today, due_date=self.fixture.today + timedelta(days=10),
-            state_code="PENDIENTE", **changes,
+            project=project,
+            name=f"Tarea {number}",
+            responsible=self.fixture.worker.worker,
+            start_date=self.fixture.today,
+            due_date=self.fixture.today + timedelta(days=10),
+            state_code="PENDIENTE",
+            **changes,
         )
 
     def test_project_query_count_is_constant_for_1_20_120(self):
@@ -94,7 +134,12 @@ class PerformanceRegressionTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(len(response.json()), size)
                 self.assertTrue(all(p["permissions"]["create_tasks"] for p in response.json()))
-                self.assertTrue(all(p["areas"] == [{"id": self.fixture.area.pk, "name": self.fixture.area.name}] for p in response.json()))
+                self.assertTrue(
+                    all(
+                        p["areas"] == [{"id": self.fixture.area.pk, "name": self.fixture.area.name}]
+                        for p in response.json()
+                    )
+                )
                 counts[role].append(count)
         for values in counts.values():
             self.assertEqual(len(set(values)), 1)
@@ -136,7 +181,9 @@ class PerformanceRegressionTests(unittest.TestCase):
             self.assertLessEqual(max(values), 12)
         for role in ("worker", "outsider"):
             self.assertEqual(self.get("/api/auth/admin/accounts/", role)[0].status_code, 403)
-            self.assertEqual(self.get(f"/api/projects/workers/?area_ids={self.fixture.area.pk}", role)[0].status_code, 403)
+            self.assertEqual(
+                self.get(f"/api/projects/workers/?area_ids={self.fixture.area.pk}", role)[0].status_code, 403
+            )
 
     def test_bulk_area_summary_preserves_multiple_inactive_and_all_areas(self):
         worker = self.fixture.worker.worker
@@ -184,7 +231,9 @@ class PerformanceRegressionTests(unittest.TestCase):
 
     def test_task_relationships_supervision_and_configured_states(self):
         project = self.project()
-        member = ProjectMember.objects.create(project=project, worker=self.fixture.worker.worker, project_role="RESPONSABLE")
+        member = ProjectMember.objects.create(
+            project=project, worker=self.fixture.worker.worker, project_role="RESPONSABLE"
+        )
         first = self.task(project, 0)
         child = self.task(project, 1, parent=first)
         hidden = self.task(project, 2)
@@ -205,7 +254,9 @@ class PerformanceRegressionTests(unittest.TestCase):
         self.assertIn({"target": "CANCELADA", "reason_required": True}, worker[0]["transitions"])
         member.project_role = "PARTICIPANTE"
         member.save(update_fields=["project_role"])
-        self.assertNotIn({"target": "CANCELADA", "reason_required": True}, self.get(path, "worker")[0].json()[0]["transitions"])
+        self.assertNotIn(
+            {"target": "CANCELADA", "reason_required": True}, self.get(path, "worker")[0].json()[0]["transitions"]
+        )
         project.state_code = "FINALIZADO"
         project.save(update_fields=["state_code"])
         self.assertFalse(any(self.get(path)[0].json()[0]["permissions"].values()))
@@ -244,15 +295,26 @@ class PerformanceRegressionTests(unittest.TestCase):
         client = Client(enforce_csrf_checks=True)
         csrf = client.get("/api/auth/csrf/").json()["csrf_token"]
         logged = client.post(
-            "/api/auth/login/", data=json.dumps({"email": user.email, "password": "Synthetic-local-password-93!"}),
-            content_type="application/json", HTTP_X_CSRFTOKEN=csrf,
+            "/api/auth/login/",
+            data=json.dumps({"email": user.email, "password": "Synthetic-local-password-93!"}),
+            content_type="application/json",
+            HTTP_X_CSRFTOKEN=csrf,
         )
         self.assertEqual(logged.status_code, 200)
         response = client.post(
-            "/api/projects/", data=json.dumps({
-                "name": "Proyecto único", "area_ids": [self.fixture.area.pk], "end_date": None, "mode": "assigned",
-                "worker_ids": [self.fixture.worker.worker_id], "worker_contribute": True,
-            }), content_type="application/json", HTTP_AUTHORIZATION="Bearer " + logged.json()["access"],
+            "/api/projects/",
+            data=json.dumps(
+                {
+                    "name": "Proyecto único",
+                    "area_ids": [self.fixture.area.pk],
+                    "end_date": None,
+                    "mode": "assigned",
+                    "worker_ids": [self.fixture.worker.worker_id],
+                    "worker_contribute": True,
+                }
+            ),
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer " + logged.json()["access"],
         )
         self.assertEqual(response.status_code, 201, response.content)
         project = Project.objects.get(pk=response.json()["id"])

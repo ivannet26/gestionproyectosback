@@ -116,7 +116,13 @@ def edit_task(user, project_id, task_id, data):
         if "description" in data:
             require_admin(user)
         parent = task.parent if task.parent_id else None
-        validate_dates(project, data.get("start_date", task.start_date), data.get("due_date", task.due_date), parent=parent, task=task)
+        validate_dates(
+            project,
+            data.get("start_date", task.start_date),
+            data.get("due_date", task.due_date),
+            parent=parent,
+            task=task,
+        )
         validate_responsible(project, data.get("responsible_id", task.responsible_id), task.state_code)
         for field in ("name", "description", "priority", "start_date", "due_date", "responsible_id"):
             if field in data:

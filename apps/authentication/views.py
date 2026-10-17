@@ -95,8 +95,10 @@ class LoginView(APIView):
         with transaction.atomic():
             try:
                 user = (
-                    User.objects.select_related("worker").prefetch_related("userrole_set")
-                    .select_for_update().get(worker__email__iexact=email)
+                    User.objects.select_related("worker")
+                    .prefetch_related("userrole_set")
+                    .select_for_update()
+                    .get(worker__email__iexact=email)
                 )
             except (User.DoesNotExist, User.MultipleObjectsReturned):
                 user = None
@@ -122,8 +124,10 @@ def refresh_view(request):
         claims = decode_token(token, "refresh")
         with transaction.atomic():
             user = (
-                User.objects.select_related("worker").prefetch_related("userrole_set")
-                .select_for_update().get(pk=int(claims["sub"]))
+                User.objects.select_related("worker")
+                .prefetch_related("userrole_set")
+                .select_for_update()
+                .get(pk=int(claims["sub"]))
             )
             _, expires_at = consume_stored(token, "refresh", user=user)
             if not eligible(user):

@@ -14,7 +14,9 @@ class ProjectCreateSerializer(StrictSerializer):
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
     end_date = serializers.DateField(required=False, allow_null=True, default=None)
     area_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1), allow_empty=False, max_length=1,
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        max_length=1,
         error_messages={"empty": "Selecciona un área", "max_length": "Selecciona exactamente un área"},
     )
     mode = serializers.ChoiceField(choices=("available", "assigned"))
