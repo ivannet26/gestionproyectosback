@@ -7,23 +7,12 @@ from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor
 from .statuses import require_configured_state
-from .projects import eligible_project_workers
+from .assignees import primary_assignee, requested_assignees, save_assignees, task_assignee_ids, validate_assignees
 
 
 def editable_project(project):
     if project.state_code in ("FINALIZADO", "CANCELADO"):
         raise ValidationError({"detail": "El proyecto está cerrado"})
-
-
-def validate_responsible(project, worker_id, state_code):
-    if worker_id is None:
-        if state_code in ("EN_CURSO", "EN_REVISION", "COMPLETADA"):
-            raise ValidationError({"responsible_id": "Este estado requiere responsable activo del proyecto"})
-        return
-    if not ProjectMember.objects.filter(
-        project=project, worker_id=worker_id, active=True, worker__in=eligible_project_workers(project)
-    ).exists():
-        raise ValidationError({"responsible_id": "El responsable debe ser participante activo del proyecto"})
 
 
 def validate_dates(project, start_date, due_date, parent=None, task=None):
@@ -54,11 +43,14 @@ def save_labels(task, data):
         raise ValidationError({"requirement_ids": "Los requisitos deben pertenecer al proyecto"})
     labels = [{"name": item.name, "kind": item.kind} for item in requirements] + own
     validate_labels(labels)
-    TaskLabel.objects.filter(task=task).delete()
-    TaskLabel.objects.bulk_create(
-        [TaskLabel(task=task, requirement=item, name=item.name, kind=item.kind) for item in requirements]
-        + [TaskLabel(task=task, **label) for label in own]
-    )
+    desired = [TaskLabel(task=task, requirement=item, name=item.name, kind=item.kind) for item in requirements]
+    desired += [TaskLabel(task=task, **label) for label in own]
+    def label_key(label):
+        return label.requirement_id, label.name, label.kind
+    existing = {label_key(label): label for label in TaskLabel.objects.filter(task=task)}
+    keys = {label_key(label) for label in desired}
+    TaskLabel.objects.filter(pk__in=[label.pk for identity, label in existing.items() if identity not in keys]).delete()
+    TaskLabel.objects.bulk_create([label for label in desired if label_key(label) not in existing])
 
 
 def create_task(user, project_id, data):
@@ -66,15 +58,15 @@ def create_task(user, project_id, data):
         project = project_for_user(user, project_id, lock=True)
         editable_project(project)
         require_task_creation(user, project)
-        responsible_id = data["responsible_id"]
+        assignee_ids = requested_assignees(data)
         if user.global_role != "ADMINISTRADOR":
-            if responsible_id not in (None, user.worker_id):
+            if set(assignee_ids) - {user.worker_id}:
                 raise PermissionDenied("Solo el Administrador puede asignar tareas a otros trabajadores")
             if data["state_code"] != "PENDIENTE":
                 raise ValidationError(
                     {"state_code": "Crea la tarea pendiente y usa las transiciones autorizadas para cambiar su estado"}
                 )
-            responsible_id = user.worker_id
+            assignee_ids = [user.worker_id]
         require_configured_state(project, data["state_code"])
         if data["state_code"] in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
             raise ValidationError({"reason": "Indica un motivo para este estado"})
@@ -86,7 +78,8 @@ def create_task(user, project_id, data):
             require_task_permission(user, project, parent, "worker_create")
         start_date = parent.start_date if parent else project.start_date or timezone.localdate()
         validate_dates(project, start_date, data["due_date"], parent=parent)
-        validate_responsible(project, responsible_id, data["state_code"])
+        validate_assignees(project, assignee_ids, data["state_code"],
+                           "responsible_ids" if "responsible_ids" in data else "responsible_id")
         task = Task.objects.create(
             project=project,
             parent=parent,
@@ -97,10 +90,11 @@ def create_task(user, project_id, data):
             priority=data["priority"],
             start_date=start_date,
             due_date=data["due_date"],
-            responsible_id=responsible_id,
+            responsible_id=primary_assignee(assignee_ids),
             reason=data["reason"] or None,
             progress=100 if data["state_code"] == "COMPLETADA" else 0,
         )
+        save_assignees(task, assignee_ids)
         save_labels(task, data)
     return task
 
@@ -111,18 +105,22 @@ def edit_task(user, project_id, task_id, data):
         task = task_for_user(user, project, task_id)
         require_task_permission(user, project, task, "worker_edit")
         editable_project(project)
-        if "responsible_id" in data:
+        if "responsible_id" in data or "responsible_ids" in data:
             require_admin(user)
         if "description" in data:
             require_admin(user)
         parent = task.parent if task.parent_id else None
         validate_dates(project, data.get("start_date", task.start_date), data.get("due_date", task.due_date), parent=parent, task=task)
-        validate_responsible(project, data.get("responsible_id", task.responsible_id), task.state_code)
-        for field in ("name", "description", "priority", "start_date", "due_date", "responsible_id"):
+        assignee_ids = requested_assignees(data, task)
+        validate_assignees(project, assignee_ids, task.state_code,
+                           "responsible_ids" if "responsible_ids" in data else "responsible_id")
+        task.responsible_id = primary_assignee(assignee_ids, task)
+        for field in ("name", "description", "priority", "start_date", "due_date"):
             if field in data:
                 setattr(task, field, data[field])
         task.updated_at = timezone.now()
         task.save()
+        save_assignees(task, assignee_ids)
         save_labels(task, data)
     return task
 
@@ -151,7 +149,7 @@ def validate_transition(user, project, task, target, reason):
         raise PermissionDenied("Esta transición requiere supervisión del proyecto")
     if transition.reason_required and not reason:
         raise ValidationError({"reason": "Indica el motivo del cambio"})
-    validate_responsible(project, task.responsible_id, target)
+    validate_assignees(project, task_assignee_ids(task), target)
     if target not in ("COMPLETADA", "CANCELADA"):
         parent = task.parent
         visited = set()

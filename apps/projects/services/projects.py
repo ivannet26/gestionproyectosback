@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Exists, OuterRef
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -11,7 +11,7 @@ from apps.organization.services.areas import active_area_ids
 from apps.workers.models import Worker
 from apps.workers.services.access import eligible_workers
 
-from ..models import Project, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
+from ..models import Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
 from .access import can_create_tasks, require_admin
 from .audit import audit_actor
 from .statuses import status_configuration
@@ -28,6 +28,9 @@ def eligible_project_workers(project):
 
 def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=None):
     admin = user.global_role == "ADMINISTRADOR"
+    has_associated_workers = getattr(project, "has_associated_workers", None)
+    if has_associated_workers is None:
+        has_associated_workers = ProjectMember.objects.filter(project=project, active=True).exists()
     result = {
         "id": project.pk,
         "name": project.name,
@@ -36,6 +39,7 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         "end_date": project.end_date,
         "state_code": project.state_code,
         "available": project.available,
+        "has_associated_workers": has_associated_workers,
         "areas": list(project_areas(project).values("id", "name")) if areas is None else areas,
         "worker_edit": project.worker_edit,
         "worker_state": project.worker_state,
@@ -46,6 +50,7 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         },
     }
     if detailed:
+        result["is_favorite"] = ProjectFavorite.objects.filter(project=project, user=user).exists()
         members = ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project))
         if not admin:
             members = members.filter(worker_id=user.worker_id)
@@ -59,7 +64,8 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
 
 
 def project_snapshots(projects, user):
-    projects = list(projects.select_related("area"))
+    associations = ProjectMember.objects.filter(project_id=OuterRef("pk"), active=True)
+    projects = list(projects.select_related("area").annotate(has_associated_workers=Exists(associations)))
     role = user.global_role
     memberships = set()
     if role == "TRABAJADOR":

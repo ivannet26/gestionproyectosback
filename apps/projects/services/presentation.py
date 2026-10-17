@@ -1,6 +1,7 @@
 from collections import defaultdict
+from django.db.models import Q
 
-from ..models import ProjectMember, TaskDependency, TaskLabel, TaskTransition
+from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
 from .statuses import configured_states
 
 
@@ -30,11 +31,26 @@ def task_snapshots(tasks, project, user):
             "target": transition["target"], "reason_required": transition["reason_required"],
         })
     labels = defaultdict(list)
+    assignees = defaultdict(dict)
+    for task in tasks:
+        if task.responsible_id is not None:
+            assignees[task.pk][task.responsible_id] = {
+                "id": task.responsible_id,
+                "name": f"{task.responsible.first_names} {task.responsible.last_names}",
+            }
+    for assignment in TaskAssignee.objects.filter(task__in=tasks).select_related("worker"):
+        assignees[assignment.task_id][assignment.worker_id] = {
+            "id": assignment.worker_id,
+            "name": f"{assignment.worker.first_names} {assignment.worker.last_names}",
+        }
     for label in TaskLabel.objects.filter(task__in=tasks).values("task_id", "id", "requirement_id", "name", "kind"):
         labels[label.pop("task_id")].append(label)
     dependencies = TaskDependency.objects.filter(successor__in=tasks)
     if not admin:
-        dependencies = dependencies.filter(predecessor__responsible_id=user.worker_id)
+        dependencies = dependencies.filter(
+            Q(predecessor__responsible_id=user.worker_id)
+            | Q(predecessor_id__in=TaskAssignee.objects.filter(worker_id=user.worker_id).values("task_id"))
+        )
     dependencies_by_task = defaultdict(list)
     for successor_id, predecessor_id in dependencies.values_list("successor_id", "predecessor_id"):
         dependencies_by_task[successor_id].append(predecessor_id)
@@ -43,6 +59,7 @@ def task_snapshots(tasks, project, user):
             task, user, states, labels[task.pk], dependencies_by_task[task.pk],
             transitions_by_state[task.state_code], admin=admin, terminal=terminal, manageable=manageable,
             member=member, worker_edit=project.worker_edit, worker_state=project.worker_state, can_create=can_create,
+            assignees=list(sorted(assignees[task.pk].values(), key=lambda worker: worker["id"])),
         )
         for task in tasks
     ]
@@ -50,9 +67,9 @@ def task_snapshots(tasks, project, user):
 
 def task_snapshot_from_context(
     task, user, states, labels, dependencies, transitions, *, admin, terminal, manageable,
-    member, worker_edit, worker_state, can_create,
+    member, worker_edit, worker_state, can_create, assignees,
 ):
-    assigned = task.responsible_id == user.worker_id
+    assigned = any(worker["id"] == user.worker_id for worker in assignees)
     can_edit = not terminal and (admin or (assigned and member and worker_edit))
     can_state = not terminal and (admin or (assigned and member and worker_state))
     return {
@@ -71,6 +88,7 @@ def task_snapshot_from_context(
         if task.responsible_id
         else None,
         "labels": labels,
+        "assignees": assignees,
         "dependencies": dependencies,
         "transitions": transitions if can_state else [],
         "permissions": {

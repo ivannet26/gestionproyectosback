@@ -3,7 +3,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.authentication.services.eligibility import account_eligible
 from apps.workers.services.areas import authorized_areas
-from ..models import Project, ProjectMember, Task
+from ..models import Project, ProjectMember, Task, TaskAssignee
 
 
 def require_admin(user):
@@ -63,7 +63,10 @@ def tasks_for_user(user, project):
     tasks = Task.objects.filter(project=project, archived=False)
     if user.global_role == "ADMINISTRADOR":
         return tasks
-    return tasks.filter(responsible_id=user.worker_id)
+    assignments = TaskAssignee.objects.filter(task_id=OuterRef("pk"), worker_id=user.worker_id)
+    return tasks.annotate(is_additional_assignee=Exists(assignments)).filter(
+        Q(responsible_id=user.worker_id) | Q(is_additional_assignee=True)
+    )
 
 
 def task_for_user(user, project, task_id):
@@ -76,7 +79,10 @@ def task_for_user(user, project, task_id):
 def require_task_permission(user, project, task, permission):
     if user.global_role == "ADMINISTRADOR":
         return
-    if user.global_role != "TRABAJADOR" or task.responsible_id != user.worker_id or not getattr(project, permission):
+    assigned = task.responsible_id == user.worker_id or TaskAssignee.objects.filter(
+        task=task, worker_id=user.worker_id,
+    ).exists()
+    if user.global_role != "TRABAJADOR" or not assigned or not getattr(project, permission):
         raise PermissionDenied("No tienes permiso para modificar esta tarea")
     if not ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True).exists():
         raise PermissionDenied("Se requiere participación activa en el proyecto")

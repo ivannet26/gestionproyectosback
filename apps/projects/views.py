@@ -10,12 +10,14 @@ from apps.organization.services.areas import active_area_options
 from .serializers import (
     DependencySerializer,
     ProjectCreateSerializer,
+    ProjectFavoriteSerializer,
     ProjectTaskConfigurationSerializer,
     TaskCreateSerializer,
     TaskEditSerializer,
     TaskStateSerializer,
 )
 from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
+from .services.favorites import set_project_favorite
 from .services.presentation import task_snapshot, task_snapshots
 from .services.projects import create_project, project_snapshot, project_snapshots, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
@@ -84,6 +86,14 @@ class ProjectListView(ProjectApiView):
 class ProjectDetailView(ProjectApiView):
     def get(self, request, project_id):
         return Response(project_snapshot(project_for_user(request.user, project_id), request.user, detailed=True))
+
+
+class ProjectFavoriteView(ProjectApiView):
+    def put(self, request, project_id):
+        return Response(ProjectFavoriteSerializer(set_project_favorite(request.user, project_id, True)).data)
+
+    def delete(self, request, project_id):
+        return Response(ProjectFavoriteSerializer(set_project_favorite(request.user, project_id, False)).data)
 
 
 class TaskListView(ProjectApiView):

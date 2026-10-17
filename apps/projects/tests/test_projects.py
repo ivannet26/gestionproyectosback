@@ -15,12 +15,14 @@ from apps.authentication.tokens import issue_access
 from apps.organization.models import Area
 from apps.projects.models import (
     Project,
+    ProjectFavorite,
     ProjectMember,
     ProjectRequirement,
     ProjectState,
     ProjectTaskStatus,
     ProjectType,
     Task,
+    TaskAssignee,
     TaskDependency,
     TaskLabel,
     TaskState,
@@ -50,10 +52,12 @@ class ProjectFlowTests(unittest.TestCase):
             TaskState,
             TaskTransition,
             Project,
+            ProjectFavorite,
             ProjectMember,
             ProjectRequirement,
             ProjectTaskStatus,
             Task,
+            TaskAssignee,
             TaskDependency,
             TaskLabel,
         ]

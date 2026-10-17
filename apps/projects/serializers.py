@@ -4,6 +4,10 @@ from rest_framework import serializers
 from apps.authentication.serializers import StrictSerializer
 
 
+class ProjectFavoriteSerializer(StrictSerializer):
+    is_favorite = serializers.BooleanField()
+
+
 class LabelSerializer(StrictSerializer):
     name = serializers.CharField(max_length=120)
     kind = serializers.ChoiceField(choices=("technical", "nontechnical"))
@@ -42,6 +46,17 @@ def validate_labels(labels):
         raise serializers.ValidationError({"labels": "No se permiten etiquetas duplicadas"})
 
 
+def validate_assignee_input(attrs, initial):
+    ids = attrs.get("responsible_ids")
+    if ids is not None:
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError({"responsible_ids": "No se permiten responsables duplicados"})
+        if "responsible_id" in initial:
+            expected = [] if attrs["responsible_id"] is None else [attrs["responsible_id"]]
+            if set(ids) != set(expected):
+                raise serializers.ValidationError({"responsible_ids": "Usa solo una forma de indicar los responsables"})
+
+
 class TaskCreateSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
@@ -49,12 +64,14 @@ class TaskCreateSerializer(StrictSerializer):
     priority = serializers.IntegerField(min_value=1, max_value=4)
     due_date = serializers.DateField()
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, default=None)
+    responsible_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=200)
     parent_id = serializers.IntegerField(min_value=1, allow_null=True, default=None)
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=50)
     labels = LabelSerializer(many=True, required=False, default=list, max_length=50)
 
     def validate(self, attrs):
+        validate_assignee_input(attrs, self.initial_data)
         validate_labels(attrs["labels"])
         if len(attrs["requirement_ids"]) != len(set(attrs["requirement_ids"])):
             raise serializers.ValidationError({"requirement_ids": "No se permiten requisitos duplicados"})
@@ -68,10 +85,12 @@ class TaskEditSerializer(StrictSerializer):
     due_date = serializers.DateField(required=False)
     start_date = serializers.DateField(required=False)
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, required=False)
+    responsible_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=200)
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
     labels = LabelSerializer(many=True, required=False, max_length=50)
 
     def validate(self, attrs):
+        validate_assignee_input(attrs, self.initial_data)
         if not attrs:
             raise serializers.ValidationError({"detail": "Indica los datos que quieres modificar"})
         if "labels" in attrs:

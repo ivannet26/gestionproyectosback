@@ -71,6 +71,21 @@ class Project(models.Model):
         db_table = "proyecto"
 
 
+class ProjectFavorite(models.Model):
+    user = models.ForeignKey(
+        "autenticacion.User", on_delete=models.CASCADE, db_constraint=False, db_column="usuario_id"
+    )
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, db_constraint=False, db_column="proyecto_id"
+    )
+
+    class Meta:
+        db_table = "proyecto_favorito"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "project"], name="uq_proyecto_favorito_usuario")
+        ]
+
+
 class ProjectMember(models.Model):
     pk = models.CompositePrimaryKey("project_id", "worker_id")
     project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_column="proyecto_id")
@@ -104,6 +119,15 @@ class Task(models.Model):
     class Meta:
         managed = False
         db_table = "actividad"
+
+
+class TaskAssignee(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, db_constraint=False, db_column="actividad_id")
+    worker = models.ForeignKey(Worker, on_delete=models.DO_NOTHING, db_constraint=False, db_column="trabajador_id")
+
+    class Meta:
+        db_table = "actividad_responsable_adicional"
+        constraints = [models.UniqueConstraint(fields=["task", "worker"], name="uq_actividad_responsable_adicional")]
 
 
 class TaskDependency(models.Model):

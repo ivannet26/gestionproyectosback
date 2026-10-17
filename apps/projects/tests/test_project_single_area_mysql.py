@@ -50,8 +50,8 @@ class ProjectSingleAreaMySQLTests(unittest.TestCase):
             "organization.Area", "workers.Worker", "workers.WorkerArea", "autenticacion.User",
             "autenticacion.Role", "autenticacion.UserRole", "autenticacion.AuthToken", "proyectos.ProjectType",
             "proyectos.ProjectState", "proyectos.TaskState", "proyectos.TaskTransition", "proyectos.Project",
-            "proyectos.ProjectMember", "proyectos.ProjectRequirement", "proyectos.ProjectTaskStatus",
-            "proyectos.Task", "proyectos.TaskDependency", "proyectos.TaskLabel", "autenticacion.MigrationBackup",
+            "proyectos.ProjectFavorite", "proyectos.ProjectMember", "proyectos.ProjectRequirement", "proyectos.ProjectTaskStatus",
+            "proyectos.Task", "proyectos.TaskAssignee", "proyectos.TaskDependency", "proyectos.TaskLabel", "autenticacion.MigrationBackup",
         )]
         with connection.schema_editor() as editor:
             for model in cls.tables:

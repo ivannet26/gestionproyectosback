@@ -15,8 +15,8 @@ from apps.organization.models import Area
 from apps.workers.models import Worker, WorkerArea
 from apps.workers.services.areas import area_summaries, area_summary
 from apps.projects.models import (
-    Project, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType,
-    Task, TaskDependency, TaskLabel, TaskState, TaskTransition,
+    Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType,
+    Task, TaskAssignee, TaskDependency, TaskLabel, TaskState, TaskTransition,
 )
 from . import test_projects
 
@@ -24,8 +24,8 @@ from . import test_projects
 class PerformanceRegressionTests(unittest.TestCase):
     tables = [
         Area, Worker, WorkerArea, User, Role, UserRole, AuthToken, Invitation, RecoveryRequest, AuthThrottle,
-        ProjectType, ProjectState, TaskState, TaskTransition, Project, ProjectMember, ProjectRequirement,
-        ProjectTaskStatus, Task, TaskDependency, TaskLabel,
+        ProjectType, ProjectState, TaskState, TaskTransition, Project, ProjectFavorite, ProjectMember, ProjectRequirement,
+        ProjectTaskStatus, Task, TaskAssignee, TaskDependency, TaskLabel,
     ]
 
     @classmethod
@@ -94,11 +94,52 @@ class PerformanceRegressionTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(len(response.json()), size)
                 self.assertTrue(all(p["permissions"]["create_tasks"] for p in response.json()))
+                self.assertTrue(all(p["has_associated_workers"] is True for p in response.json()))
                 self.assertTrue(all(p["areas"] == [{"id": self.fixture.area.pk, "name": self.fixture.area.name}] for p in response.json()))
                 counts[role].append(count)
         for values in counts.values():
             self.assertEqual(len(set(values)), 1)
             self.assertLessEqual(max(values), 15)
+
+    def test_associated_workers_uses_current_project_members_not_publication_or_state(self):
+        project = self.project()
+        path = f"/api/projects/{project.pk}/"
+        self.assertIs(self.get("/api/projects/")[0].json()[0]["has_associated_workers"], False)
+        member = ProjectMember.objects.create(project=project, worker=self.fixture.worker.worker, active=False)
+        self.assertIs(self.get("/api/projects/")[0].json()[0]["has_associated_workers"], False)
+        member.active = True
+        member.save(update_fields=["active"])
+        for available in (False, True):
+            for code in ("PLANIFICADO", "EN_CURSO", "PAUSADO", "FINALIZADO", "CANCELADO"):
+                Project.objects.filter(pk=project.pk).update(available=available, state_code=code)
+                self.assertIs(self.get("/api/projects/")[0].json()[0]["has_associated_workers"], True)
+        self.assertIs(self.get(path)[0].json()["has_associated_workers"], True)
+        member.delete()
+        self.assertIs(self.get("/api/projects/")[0].json()[0]["has_associated_workers"], False)
+        for position, role in enumerate(("RESPONSABLE", "COLABORADOR", "REVISOR"), start=1):
+            project = self.project(position)
+            ProjectMember.objects.create(project=project, worker=self.fixture.admin.worker, project_role=role)
+        self.assertEqual(sum(p["has_associated_workers"] for p in self.get("/api/projects/")[0].json()), 3)
+
+    def test_associated_workers_preserves_visibility_archiving_and_creation_contract(self):
+        response = self.fixture.request("post", data=self.fixture.project_payload(
+            mode="assigned", worker_ids=[self.fixture.worker.worker_id], end_date=None,
+        ), user=self.fixture.admin)
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(response.json()["has_associated_workers"], True)
+        project_id = response.json()["id"]
+        worker = self.get("/api/projects/", "worker")[0].json()
+        self.assertEqual([p["id"] for p in worker], [project_id])
+        self.assertIs(worker[0]["has_associated_workers"], True)
+        self.assertEqual(self.get("/api/projects/", "outsider")[0].json(), [])
+        ProjectMember.objects.filter(project_id=project_id).update(active=False)
+        self.assertEqual(self.get("/api/projects/", "worker")[0].json(), [])
+        self.assertIs(self.get("/api/projects/")[0].json()[0]["has_associated_workers"], False)
+        Project.objects.filter(pk=project_id).update(archived=True)
+        self.assertEqual(self.get("/api/projects/")[0].json(), [])
+        response = self.fixture.request("post", data=self.fixture.project_payload(end_date=None), user=self.fixture.admin)
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertIs(response.json()["has_associated_workers"], False)
 
     def test_task_query_count_is_constant_for_1_20_100(self):
         project = self.project()
