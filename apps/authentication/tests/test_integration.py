@@ -159,6 +159,7 @@ class AuthenticationFlowTests(unittest.TestCase):
         self.assertEqual(invited.status_code, 201)
         worker = Worker.objects.get(email="t04@example.com")
         account = User.objects.get(worker=worker)
+        self.assertEqual(account.username, "t04@example.com")
         self.assertFalse(account.is_active)
         first_token = send_link.call_args.args[3]
         self.assertEqual(

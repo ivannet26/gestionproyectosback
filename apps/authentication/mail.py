@@ -31,6 +31,7 @@ def send_link(email, name, purpose, token):
             "Authorization": f"Bearer {settings.RESEND_API_KEY}",
             "Content-Type": "application/json",
             "Idempotency-Key": digest_token(token),
+            "User-Agent": "gestionproyectos-backend/1.0",
         },
         method="POST",
     )

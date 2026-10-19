@@ -73,9 +73,7 @@ class ProjectListView(ProjectApiView):
     serializer_class = ProjectCreateSerializer
 
     def get(self, request):
-        return Response(
-            project_snapshots(visible_projects(request.user).order_by("-id")[:200], request.user)
-        )
+        return Response(project_snapshots(visible_projects(request.user).order_by("-id")[:200], request.user))
 
     def post(self, request):
         require_admin(request.user)
@@ -105,7 +103,9 @@ class TaskListView(ProjectApiView):
         project = project_for_user(request.user, project_id)
         return Response(
             task_snapshots(
-                tasks_for_user(request.user, project).select_related("responsible").order_by("id"), project, request.user,
+                tasks_for_user(request.user, project).select_related("responsible").order_by("id"),
+                project,
+                request.user,
             )
         )
 

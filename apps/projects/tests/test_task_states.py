@@ -36,7 +36,8 @@ class TaskStateFlowTests(unittest.TestCase):
     def configure(self, project, states=None, user=None, template="custom", revision=None):
         configuration = self.configuration(project)
         return self.request(
-            "patch", f"{project.pk}/task-states/",
+            "patch",
+            f"{project.pk}/task-states/",
             {
                 "template": template,
                 "revision": revision or configuration["revision"],
@@ -84,7 +85,9 @@ class TaskStateFlowTests(unittest.TestCase):
         payload = self.task_payload(
             parent_id=parent.pk, description="No persistir", labels=[{"name": "Sintética", "kind": "technical"}]
         )
-        with patch("apps.projects.services.tasks.TaskLabel.objects.bulk_create", side_effect=IntegrityError("synthetic")):
+        with patch(
+            "apps.projects.services.tasks.TaskLabel.objects.bulk_create", side_effect=IntegrityError("synthetic")
+        ):
             response = self.request("post", f"{project.pk}/tasks/", payload, self.admin)
         self.assertEqual(response.status_code, 409)
         self.assertEqual(Task.objects.count(), 1)
@@ -190,22 +193,22 @@ class TaskStateFlowTests(unittest.TestCase):
                 "post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "BLOQUEADA", "reason": "Motivo"}, user
             )
             self.assertEqual(response.status_code, 400)
-        response = self.request(
-            "post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "EN_CURSO"}, self.worker
-        )
+        response = self.request("post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "EN_CURSO"}, self.worker)
         self.assertEqual(response.status_code, 200)
 
     def test_stale_revision_and_failure_preserve_saved_configuration(self):
         project = self.project()
         before = self.configuration(project)
         states = [
-            {**state, "name": "Inicio" if state["code"] == "PENDIENTE" else state["name"]}
-            for state in before["states"]
+            {**state, "name": "Inicio" if state["code"] == "PENDIENTE" else state["name"]} for state in before["states"]
         ]
         self.assertEqual(self.configure(project, states).status_code, 200)
         saved = self.configuration(project)
         self.assertEqual(self.configure(project, before["states"], revision=before["revision"]).status_code, 400)
-        with patch("apps.projects.services.statuses.ProjectTaskStatus.objects.bulk_create", side_effect=IntegrityError("synthetic")):
+        with patch(
+            "apps.projects.services.statuses.ProjectTaskStatus.objects.bulk_create",
+            side_effect=IntegrityError("synthetic"),
+        ):
             response = self.configure(project, list(reversed(states)))
         self.assertEqual(response.status_code, 409)
         self.assertEqual(self.configuration(project), saved)
@@ -241,7 +244,9 @@ class TaskStateFlowTests(unittest.TestCase):
         self.assertEqual(self.configure(project).status_code, 400)
 
     def test_pending_state_schema_rejects_project_creation_before_writes(self):
-        with patch("apps.projects.services.projects.ProjectTaskStatus.objects.exists", side_effect=DatabaseError("synthetic")):
+        with patch(
+            "apps.projects.services.projects.ProjectTaskStatus.objects.exists", side_effect=DatabaseError("synthetic")
+        ):
             response = self.request("post", data=self.project_payload(), user=self.admin)
         self.assertEqual(response.status_code, 503)
         self.assertFalse(Project.objects.exists())
@@ -336,8 +341,9 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
             ("text", "text", "YES", None, "", "nombre"),
         ):
             for operation in (self.migration.preflight, self.migration.install):
-                with self.subTest(column=column, operation=operation.__name__), patch.object(
-                    self.migration, "review", return_value=self.definition
+                with (
+                    self.subTest(column=column, operation=operation.__name__),
+                    patch.object(self.migration, "review", return_value=self.definition),
                 ):
                     self.cursor.reset_mock()
                     self.cursor.fetchone.side_effect = [column]
@@ -354,9 +360,10 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
 
     def test_install_preserves_preexisting_column_and_records_ownership_false(self):
         self.cursor.fetchone.side_effect = [self.compatible_column, ("utf8mb4", "utf8mb4_unicode_ci")]
-        with patch.object(self.migration, "review", return_value=self.definition), patch.object(
-            self.migration.helpers, "recreate"
-        ) as recreate:
+        with (
+            patch.object(self.migration, "review", return_value=self.definition),
+            patch.object(self.migration.helpers, "recreate") as recreate,
+        ):
             self.migration.install(self.apps, self.editor)
         self.backups.create.assert_called_once_with(
             key=self.migration.BACKUP_KEY, payload={**self.definition, "description_created": False}
@@ -365,11 +372,15 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
         self.apps.get_model.return_value.objects.using.assert_called_once_with("isolated")
         statements = [call.args[0] for call in self.cursor.execute.call_args_list]
         self.assertFalse(any(statement.startswith("ALTER TABLE actividad ") for statement in statements))
-        self.assertEqual(sum(statement.startswith("ALTER TABLE proyecto_estado_actividad ") for statement in statements), 1)
+        self.assertEqual(
+            sum(statement.startswith("ALTER TABLE proyecto_estado_actividad ") for statement in statements), 1
+        )
         self.assertIn("fk_proyecto_estado_proyecto", statements[-1])
         self.assertIn("fk_proyecto_estado_codigo", statements[-1])
         self.saved.save.assert_not_called()
-        recreate.assert_called_once_with(self.cursor, self.migration.PROCEDURE, self.migration.source(), self.saved.payload)
+        recreate.assert_called_once_with(
+            self.cursor, self.migration.PROCEDURE, self.migration.source(), self.saved.payload
+        )
 
     def test_install_creates_missing_column_once_and_marks_only_after_success(self):
         self.cursor.fetchone.side_effect = [None, ("utf8mb4", "utf8mb4_unicode_ci")]
@@ -380,8 +391,9 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
                 ownership_at_creation.append(self.saved.payload["description_created"])
 
         self.cursor.execute.side_effect = execute
-        with patch.object(self.migration, "review", return_value=self.definition), patch.object(
-            self.migration.helpers, "recreate"
+        with (
+            patch.object(self.migration, "review", return_value=self.definition),
+            patch.object(self.migration.helpers, "recreate"),
         ):
             self.migration.install(self.apps, self.editor)
         self.assertEqual(ownership_at_creation, [False])
@@ -398,9 +410,11 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
                 raise RuntimeError("synthetic concurrent column creation")
 
         self.cursor.execute.side_effect = execute
-        with patch.object(self.migration, "review", return_value=self.definition), patch.object(
-            self.migration.helpers, "recreate"
-        ) as recreate, self.assertRaisesRegex(RuntimeError, "synthetic"):
+        with (
+            patch.object(self.migration, "review", return_value=self.definition),
+            patch.object(self.migration.helpers, "recreate") as recreate,
+            self.assertRaisesRegex(RuntimeError, "synthetic"),
+        ):
             self.migration.install(self.apps, self.editor)
         self.assertIs(self.saved.payload["description_created"], False)
         self.saved.save.assert_not_called()
@@ -408,8 +422,9 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
 
     def test_invalid_state_collation_still_blocks_installation(self):
         self.cursor.fetchone.side_effect = [self.compatible_column, ("utf8mb4", "invalid;identifier")]
-        with patch.object(self.migration, "review", return_value=self.definition), self.assertRaisesRegex(
-            RuntimeError, "collation"
+        with (
+            patch.object(self.migration, "review", return_value=self.definition),
+            self.assertRaisesRegex(RuntimeError, "collation"),
         ):
             self.migration.install(self.apps, self.editor)
         self.backups.create.assert_not_called()
@@ -417,9 +432,10 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
 
     def test_reverse_preserves_preexisting_description_without_reading_or_modifying_data(self):
         self.cursor.fetchone.side_effect = [(0,)]
-        with patch.object(self.migration, "review") as review, patch.object(
-            self.migration.helpers, "recreate"
-        ) as recreate:
+        with (
+            patch.object(self.migration, "review") as review,
+            patch.object(self.migration.helpers, "recreate") as recreate,
+        ):
             self.migration.restore(self.apps, self.editor)
         self.cursor.execute.assert_called_once_with("SELECT EXISTS(SELECT 1 FROM proyecto_estado_actividad)")
         review.assert_called_once_with(self.cursor, updated=True)
@@ -430,8 +446,9 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
 
     def test_reverse_still_blocks_used_states_when_description_is_preexisting(self):
         self.cursor.fetchone.side_effect = [(1,)]
-        with patch.object(self.migration.helpers, "recreate") as recreate, self.assertRaisesRegex(
-            RuntimeError, "Project states are in use"
+        with (
+            patch.object(self.migration.helpers, "recreate") as recreate,
+            self.assertRaisesRegex(RuntimeError, "Project states are in use"),
         ):
             self.migration.restore(self.apps, self.editor)
         self.cursor.execute.assert_called_once_with("SELECT EXISTS(SELECT 1 FROM proyecto_estado_actividad)")
@@ -461,9 +478,14 @@ class TaskDescriptionMigrationTests(unittest.TestCase):
                 self.restored.delete.assert_not_called()
 
     def test_changed_procedure_is_rejected_before_forward_or_reverse_ddl(self):
-        with patch.object(self.migration.helpers, "read_definition", return_value={"Create Procedure": "BEGIN SELECT 1; END"}):
+        with patch.object(
+            self.migration.helpers, "read_definition", return_value={"Create Procedure": "BEGIN SELECT 1; END"}
+        ):
             for operation in (self.migration.preflight, self.migration.install, self.migration.restore):
-                with self.subTest(operation=operation.__name__), self.assertRaisesRegex(RuntimeError, "reviewed baseline"):
+                with (
+                    self.subTest(operation=operation.__name__),
+                    self.assertRaisesRegex(RuntimeError, "reviewed baseline"),
+                ):
                     self.cursor.reset_mock()
                     self.cursor.fetchone.side_effect = [(0,)]
                     operation(self.apps, self.editor)

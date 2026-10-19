@@ -13,14 +13,20 @@ def task_snapshots(tasks, project, user):
     admin = user.global_role == "ADMINISTRADOR"
     terminal = project.state_code in ("FINALIZADO", "CANCELADO")
     manageable = admin and not terminal
-    membership = None if admin else (
-        ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True)
-        .values("project_role", "worker__active").first()
+    membership = (
+        None
+        if admin
+        else (
+            ProjectMember.objects.filter(project=project, worker_id=user.worker_id, active=True)
+            .values("project_role", "worker__active")
+            .first()
+        )
     )
     member = membership is not None
     supervision = admin or (member and membership["project_role"] in ("RESPONSABLE", "REVISOR"))
     can_create = not terminal and (
-        admin or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
+        admin
+        or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
     )
     definitions = configured_states(project)
     states = {state["code"]: state["name"] for state in definitions}

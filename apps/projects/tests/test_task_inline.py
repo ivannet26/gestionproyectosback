@@ -36,7 +36,9 @@ class TaskInlineTests(unittest.TestCase):
         project, task, path = self.make_task()
         original = task.start_date
         for data in (
-            {"start_date": None}, {"start_date": ""}, {"start_date": "2026-02-30"},
+            {"start_date": None},
+            {"start_date": ""},
+            {"start_date": "2026-02-30"},
             {"start_date": str(original - timedelta(days=1))},
             {"start_date": str(task.due_date + timedelta(days=1))},
             {"due_date": ""}, {"priority": ""}, {"priority": 0},
@@ -49,20 +51,35 @@ class TaskInlineTests(unittest.TestCase):
     def test_parent_and_child_periods_are_preserved(self):
         project, task, path = self.make_task()
         child = self.fixture.task(project, parent_id=task.pk)
-        response = self.fixture.request("patch", path, {
-            "start_date": str(self.fixture.today + timedelta(days=1)),
-        }, self.fixture.admin)
+        response = self.fixture.request(
+            "patch",
+            path,
+            {
+                "start_date": str(self.fixture.today + timedelta(days=1)),
+            },
+            self.fixture.admin,
+        )
         self.assertEqual(response.status_code, 400)
         self.assertIn("start_date", response.json())
-        self.assertEqual(self.fixture.request("patch", f"{project.pk}/tasks/{child.pk}/", {
-            "due_date": str(task.due_date + timedelta(days=1)),
-        }, self.fixture.admin).status_code, 400)
+        self.assertEqual(
+            self.fixture.request(
+                "patch",
+                f"{project.pk}/tasks/{child.pk}/",
+                {
+                    "due_date": str(task.due_date + timedelta(days=1)),
+                },
+                self.fixture.admin,
+            ).status_code,
+            400,
+        )
 
     def test_worker_permissions_and_revocation_are_checked_for_each_patch(self):
         project, task, path = self.make_task()
         for data in ({"start_date": str(self.fixture.today + timedelta(days=1))}, {"priority": 2}):
             self.assertEqual(self.fixture.request("patch", path, data, self.fixture.worker).status_code, 200)
-        self.assertEqual(self.fixture.request("patch", path, {"responsible_id": None}, self.fixture.worker).status_code, 403)
+        self.assertEqual(
+            self.fixture.request("patch", path, {"responsible_id": None}, self.fixture.worker).status_code, 403
+        )
         self.assertEqual(self.fixture.request("patch", path, {"priority": 1}, self.fixture.outsider).status_code, 404)
         project.worker_edit = False
         project.save(update_fields=["worker_edit"])
@@ -76,7 +93,12 @@ class TaskInlineTests(unittest.TestCase):
             response = self.fixture.request("patch", path, {"priority": priority}, self.fixture.admin)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["priority"], priority)
-        self.assertEqual(self.fixture.request("patch", path, {"responsible_id": self.fixture.outsider.worker_id}, self.fixture.admin).status_code, 400)
+        self.assertEqual(
+            self.fixture.request(
+                "patch", path, {"responsible_id": self.fixture.outsider.worker_id}, self.fixture.admin
+            ).status_code,
+            400,
+        )
         response = self.fixture.request("patch", path, {"responsible_id": None}, self.fixture.admin)
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["responsible_id"])

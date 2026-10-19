@@ -10,6 +10,7 @@ from django.db.migrations.loader import MigrationLoader
 from django.test import Client
 from django.utils import timezone
 
+from apps.teams.models import Team, TeamMember
 from apps.authentication.models import AuthToken, Role, User, UserRole
 from apps.authentication.tokens import issue_access
 from apps.organization.models import Area
@@ -45,6 +46,8 @@ class ProjectFlowTests(unittest.TestCase):
             Area,
             Worker,
             WorkerArea,
+            Team,
+            TeamMember,
             User,
             Role,
             UserRole,
@@ -279,7 +282,8 @@ class ProjectFlowTests(unittest.TestCase):
             for omit_date in (False, True):
                 with self.subTest(mode=mode, omit_date=omit_date):
                     payload = self.project_payload(
-                        mode=mode, end_date=None,
+                        mode=mode,
+                        end_date=None,
                         worker_ids=[self.worker.worker_id] if mode == "assigned" else [],
                     )
                     if omit_date:
@@ -302,7 +306,8 @@ class ProjectFlowTests(unittest.TestCase):
             for areas in (None, [], [self.area.pk, self.other_area.pk], [self.area.pk, self.area.pk]):
                 with self.subTest(mode=mode, areas=areas):
                     payload = self.project_payload(
-                        mode=mode, end_date=None,
+                        mode=mode,
+                        end_date=None,
                         worker_ids=[self.worker.worker_id] if mode == "assigned" else [],
                     )
                     if areas is None:
@@ -365,7 +370,10 @@ class ProjectFlowTests(unittest.TestCase):
 
     def test_tasks_without_project_end_keep_supplied_date_and_parent_bounds(self):
         project = self.project(
-            mode="assigned", worker_ids=[self.worker.worker_id], worker_contribute=True, end_date=None,
+            mode="assigned",
+            worker_ids=[self.worker.worker_id],
+            worker_contribute=True,
+            end_date=None,
         )
         far_date = self.today + timedelta(days=365)
         response = self.request("post", f"{project.pk}/tasks/", self.task_payload(due_date=str(far_date)), self.worker)
@@ -373,25 +381,34 @@ class ProjectFlowTests(unittest.TestCase):
         parent_id = response.json()["id"]
         self.assertEqual(response.json()["responsible_id"], self.worker.worker_id)
         self.assertEqual(
-            self.request("post", f"{project.pk}/tasks/", self.task_payload(parent_id=parent_id), self.worker).status_code,
+            self.request(
+                "post", f"{project.pk}/tasks/", self.task_payload(parent_id=parent_id), self.worker
+            ).status_code,
             201,
         )
         for due_date, parent in (("", None), (str(self.today - timedelta(days=1)), None),
                                  (str(far_date + timedelta(days=1)), parent_id)):
             with self.subTest(due_date=due_date, parent=parent):
                 invalid = self.request(
-                    "post", f"{project.pk}/tasks/", self.task_payload(due_date=due_date, parent_id=parent), self.admin,
+                    "post",
+                    f"{project.pk}/tasks/",
+                    self.task_payload(due_date=due_date, parent_id=parent),
+                    self.admin,
                 )
                 self.assertEqual(invalid.status_code, 400, invalid.content)
                 self.assertIn("due_date", invalid.json())
         edit = self.request(
-            "patch", f"{project.pk}/tasks/{parent_id}/", {"due_date": str(far_date + timedelta(days=10))}, self.admin,
+            "patch",
+            f"{project.pk}/tasks/{parent_id}/",
+            {"due_date": str(far_date + timedelta(days=10))},
+            self.admin,
         )
         self.assertEqual(edit.status_code, 200, edit.content)
 
     def test_project_form_validation_returns_field_errors_without_partial_records(self):
         response = self.request(
-            "post", data={"name": " ", "area_ids": [], "mode": "available", "end_date": "invalid"},
+            "post",
+            data={"name": " ", "area_ids": [], "mode": "available", "end_date": "invalid"},
             user=self.admin,
         )
         self.assertEqual(response.status_code, 400)
@@ -402,8 +419,10 @@ class ProjectFlowTests(unittest.TestCase):
     def test_task_form_validation_returns_field_errors_without_creating_tasks(self):
         project = self.assigned_project()
         response = self.request(
-            "post", f"{project.pk}/tasks/",
-            self.task_payload(name=" ", description="x" * 10001, due_date="invalid", priority=5), self.admin,
+            "post",
+            f"{project.pk}/tasks/",
+            self.task_payload(name=" ", description="x" * 10001, due_date="invalid", priority=5),
+            self.admin,
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(set(response.json()), {"name", "description", "due_date", "priority"})

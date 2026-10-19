@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -6,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.authentication.security import IsAdministrator
+from apps.projects.services.audit import audit_actor
 from apps.workers.services.areas import authorized_areas
 from .models import Team, TeamMember
 from .serializers import TeamMemberCreateSerializer, TeamMemberSerializer, TeamSerializer
@@ -51,13 +53,31 @@ class TeamViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         serializer = TeamMemberCreateSerializer(data=request.data, context={"team": team})
         serializer.is_valid(raise_exception=True)
-        member = TeamMember.objects.create(
-            team=team,
-            worker_id=serializer.validated_data["worker_id"],
-            joined_date=serializer.validated_data.get("joined_date") or timezone.localdate(),
-        )
-        member = TeamMember.objects.select_related("worker").get(pk=member.pk)
-        return Response(TeamMemberSerializer(member).data, status=status.HTTP_201_CREATED)
+        worker_id = serializer.validated_data["worker_id"]
+        joined_date = serializer.validated_data.get("joined_date") or timezone.localdate()
+        with audit_actor(request.user), transaction.atomic():
+            existing = TeamMember.objects.filter(team=team, worker_id=worker_id).order_by("-id").first()
+            if existing is not None and existing.left_date is not None:
+                existing.joined_date = joined_date
+                existing.left_date = None
+                try:
+                    existing.save(update_fields=["joined_date", "left_date"])
+                except IntegrityError:
+                    return Response(
+                        {"worker_id": "El trabajador ya pertenece al equipo"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                member = TeamMember.objects.select_related("worker").get(pk=existing.pk)
+                return Response(TeamMemberSerializer(member).data, status=status.HTTP_201_CREATED)
+            try:
+                member = TeamMember.objects.create(team=team, worker_id=worker_id, joined_date=joined_date)
+            except IntegrityError:
+                return Response(
+                    {"worker_id": "El trabajador ya pertenece al equipo"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            member = TeamMember.objects.select_related("worker").get(pk=member.pk)
+            return Response(TeamMemberSerializer(member).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["delete"], url_path=r"members/(?P<member_id>\d+)")
     def remove_member(self, request, pk=None, member_id=None):
@@ -65,6 +85,7 @@ class TeamViewSet(viewsets.ModelViewSet):
         member = TeamMember.objects.filter(pk=member_id, team=team, left_date__isnull=True).first()
         if member is None:
             return Response({"detail": "Miembro no disponible"}, status=status.HTTP_404_NOT_FOUND)
-        member.left_date = timezone.localdate()
-        member.save(update_fields=["left_date"])
+        with audit_actor(request.user), transaction.atomic():
+            member.left_date = timezone.localdate()
+            member.save(update_fields=["left_date"])
         return Response(status=status.HTTP_204_NO_CONTENT)

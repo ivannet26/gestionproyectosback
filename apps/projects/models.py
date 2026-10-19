@@ -2,6 +2,7 @@ from django.db import models
 from django.utils import timezone
 
 from apps.organization.models import Area
+from apps.teams.models import Team
 from apps.workers.models import Worker
 
 
@@ -52,6 +53,7 @@ class Project(models.Model):
     name = models.CharField(max_length=180, db_column="nombre")
     description = models.TextField(null=True, db_column="descripcion")
     area = models.ForeignKey(Area, db_column="area_id", on_delete=models.DO_NOTHING)
+    team = models.ForeignKey(Team, null=True, blank=True, db_column="equipo_id", on_delete=models.DO_NOTHING)
     type_code = models.CharField(max_length=30, db_column="tipo_codigo")
     state_code = models.CharField(max_length=20, default="PLANIFICADO", db_column="estado_codigo")
     priority = models.PositiveSmallIntegerField(default=3, db_column="prioridad")

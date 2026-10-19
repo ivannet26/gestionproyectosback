@@ -36,8 +36,7 @@ def area_summaries(workers):
         worker.pk: {
             "all_areas": worker.all_areas,
             "areas": [
-                area for area in areas
-                if worker.all_areas or area["id"] in selected.get(worker.pk, {worker.area_id})
+                area for area in areas if worker.all_areas or area["id"] in selected.get(worker.pk, {worker.area_id})
             ],
         }
         for worker in workers

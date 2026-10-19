@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.organization",
     "apps.workers",
     "apps.teams",
+    "apps.absences",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",

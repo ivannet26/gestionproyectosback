@@ -11,7 +11,7 @@ class Worker(models.Model):
     last_names = models.CharField(max_length=120, db_column="apellidos")
     email = models.EmailField(max_length=254, db_column="correo", null=True, blank=True, unique=True)
     weekly_hours = models.DecimalField(
-        max_digits=5, decimal_places=2, db_column="horas_semanales", null=True, blank=True
+        max_digits=5, decimal_places=2, db_column="horas_semanales", default=40, blank=True
     )
     active = models.BooleanField(db_column="activo", default=True)
     all_areas = models.BooleanField(default=False, db_column="todas_las_areas")
