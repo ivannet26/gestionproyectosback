@@ -1,9 +1,12 @@
 import json
+import smtplib
+from email.utils import make_msgid
 from http.client import HTTPException
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.core.mail import EmailMessage
 
 from .tokens import digest_token
 
@@ -15,12 +18,43 @@ class DeliveryError(Exception):
 
 
 def send_link(email, name, purpose, token):
-    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
-        raise DeliveryError("Servicio de correo no configurado")
     path = "activar" if purpose == "activation" else "restablecer"
     subject = "Activa tu cuenta GM" if purpose == "activation" else "Restablece tu contraseña GM"
     url = f"{settings.FRONTEND_URL}/{path}#token={token}"
     message = f"Hola {name},\n\nUsa este enlace para {'activar tu cuenta' if purpose == 'activation' else 'restablecer tu contraseña'}:\n{url}\n\nSi no solicitaste esto, ignora este mensaje."
+    if settings.EMAIL_HOST:
+        return send_smtp(email, subject, message)
+    if not settings.RESEND_API_KEY or not settings.RESEND_FROM_EMAIL:
+        raise DeliveryError("Servicio de correo no configurado")
+    return send_resend(email, subject, message, token)
+
+
+def send_smtp(email, subject, message):
+    if not settings.MAIL_FROM_EMAIL:
+        raise DeliveryError("Servicio de correo no configurado")
+    message_id = make_msgid()
+    mail = EmailMessage(
+        subject,
+        message,
+        settings.MAIL_FROM_EMAIL,
+        [email],
+        headers={"Message-ID": message_id},
+    )
+    try:
+        mail.send(fail_silently=False)
+    except (
+        smtplib.SMTPAuthenticationError,
+        smtplib.SMTPSenderRefused,
+        smtplib.SMTPRecipientsRefused,
+        smtplib.SMTPDataError,
+    ):
+        raise DeliveryError("El proveedor rechazó el envío") from None
+    except (smtplib.SMTPException, OSError, TimeoutError):
+        raise DeliveryError("No se confirmó la aceptación del correo", "unknown") from None
+    return message_id
+
+
+def send_resend(email, subject, message, token):
     payload = json.dumps(
         {"from": settings.RESEND_FROM_EMAIL, "to": [email], "subject": subject, "text": message}
     ).encode()

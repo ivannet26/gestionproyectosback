@@ -138,4 +138,12 @@ AUTH_COOKIE_SECURE = not DEBUG
 AUTH_COOKIE_SAMESITE = os.environ.get("AUTH_COOKIE_SAMESITE", "Lax")
 AUTH_JWT_KEY = os.environ.get("AUTH_JWT_KEY", SECRET_KEY)
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "")
+MAIL_FROM_EMAIL = os.environ.get("MAIL_FROM_EMAIL") or os.environ.get("RESEND_FROM_EMAIL", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL") or MAIL_FROM_EMAIL
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() == "true"
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "False").lower() == "true"
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "10"))
