@@ -10,7 +10,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.recorder import MigrationRecorder
 
-from apps.projects.models import ProjectMember, Task, TaskAssignee, TaskDependency, TaskStateDefinition, TaskStatusTemplate
+from apps.projects.models import ProjectMember, Task, TaskAssignee, TaskDependency, TaskStateDefinition, TaskStatusTemplate, TaskActivity, TaskRelation
 from apps.projects.services.audit import audit_actor
 from . import test_state_templates as template_tests
 from . import test_projects as fixtures
@@ -43,7 +43,7 @@ class StateTemplatesMySQLTests(unittest.TestCase):
             raise RuntimeError("The dedicated database must be empty; existing tables will not be removed")
         previous = MigrationLoader(None).project_state([("proyectos", "0009_task_assignees")])
         labels = (
-            "organization.Area", "workers.Worker", "workers.WorkerArea", "autenticacion.User",
+            "organization.Area", "workers.Worker", "workers.WorkerArea", "teams.Team", "teams.TeamMember", "autenticacion.User",
             "autenticacion.Role", "autenticacion.UserRole", "autenticacion.AuthToken", "proyectos.ProjectType",
             "proyectos.ProjectState", "proyectos.TaskState", "proyectos.TaskTransition", "proyectos.Project",
             "proyectos.ProjectFavorite", "proyectos.ProjectMember", "proyectos.ProjectRequirement", "proyectos.ProjectTaskStatus",
@@ -52,6 +52,9 @@ class StateTemplatesMySQLTests(unittest.TestCase):
         cls.labels = labels
         with connection.schema_editor() as editor:
             for label in labels:
+                if label.startswith("teams."):
+                    editor.create_model(apps.get_model(label))
+                    continue
                 historical = previous.apps.get_model(label)
                 editor.create_model(historical if historical._meta.managed else apps.get_model(label))
         MigrationRecorder(connection).ensure_schema()
@@ -67,7 +70,10 @@ class StateTemplatesMySQLTests(unittest.TestCase):
         with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1"}):
             instance = migration.Migration("0010_task_status_templates", "proyectos")
             MigrationExecutor(connection).apply_migration(previous, instance)
-        cls.tables = [apps.get_model(label) for label in labels] + [TaskStateDefinition, TaskStatusTemplate]
+        with connection.schema_editor() as editor:
+            editor.create_model(TaskRelation)
+            editor.create_model(TaskActivity)
+        cls.tables = [apps.get_model(label) for label in labels] + [TaskStateDefinition, TaskStatusTemplate, TaskRelation, TaskActivity]
 
     @classmethod
     def tearDownClass(cls):

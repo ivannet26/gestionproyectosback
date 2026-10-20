@@ -112,6 +112,7 @@ class Task(models.Model):
     priority = models.PositiveSmallIntegerField(null=True, default=3, db_column="prioridad")
     start_date = models.DateField(db_column="fecha_inicio")
     due_date = models.DateField(null=True, db_column="fecha_fin")
+    estimated_minutes = models.PositiveIntegerField(null=True, blank=True, db_column="duracion_estimada_minutos")
     progress = models.DecimalField(max_digits=5, decimal_places=2, default=0, db_column="avance")
     reason = models.CharField(max_length=500, null=True, db_column="motivo_cambio")
     archived = models.BooleanField(default=False, db_column="archivada")
@@ -130,6 +131,39 @@ class TaskAssignee(models.Model):
     class Meta:
         db_table = "actividad_responsable_adicional"
         constraints = [models.UniqueConstraint(fields=["task", "worker"], name="uq_actividad_responsable_adicional")]
+
+
+class TaskRelation(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
+    left_task = models.ForeignKey(Task, on_delete=models.DO_NOTHING, db_constraint=False, related_name="relations_left")
+    right_task = models.ForeignKey(Task, on_delete=models.DO_NOTHING, db_constraint=False, related_name="relations_right")
+    name = models.CharField(max_length=70)
+    name_key = models.CharField(max_length=210)
+
+    class Meta:
+        db_table = "actividad_relacion"
+        constraints = [
+            models.UniqueConstraint(fields=["project", "left_task", "right_task", "name_key"], name="uq_actividad_relacion"),
+            models.CheckConstraint(condition=models.Q(left_task_id__lt=models.F("right_task_id")), name="ck_relacion_distinta"),
+        ]
+
+
+class TaskActivity(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_constraint=False, db_column="proyecto_id")
+    task = models.ForeignKey(Task, on_delete=models.DO_NOTHING, db_constraint=False, db_column="actividad_id")
+    operation_id = models.CharField(max_length=36, db_column="operacion_id")
+    actor_id = models.PositiveBigIntegerField(db_column="autor_id")
+    actor_name = models.CharField(max_length=225, db_column="autor_nombre")
+    action = models.CharField(max_length=32, db_column="accion")
+    field = models.CharField(max_length=32, blank=True, default="", db_column="campo")
+    old_value = models.JSONField(null=True, db_column="valor_anterior")
+    new_value = models.JSONField(null=True, db_column="valor_nuevo")
+    related_task_id = models.PositiveBigIntegerField(null=True, db_column="actividad_relacionada_id")
+    created_at = models.DateTimeField(default=timezone.now, db_column="creado_en")
+
+    class Meta:
+        db_table = "actividad_historial"
+        indexes = [models.Index(fields=["task", "operation_id", "id"], name="ix_historial_operacion")]
 
 
 class TaskDependency(models.Model):

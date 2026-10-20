@@ -5,7 +5,8 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskTransition
 from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
-from .audit import audit_actor
+from .audit import audit_actor, record_activity
+from .activity import activity_values, record_changes, record_state_change
 from .statuses import require_configured_state
 from .state_categories import definition_rules, state_rule, transition_policy
 from .assignees import primary_assignee, requested_assignees, save_assignees, task_assignee_ids, validate_assignees
@@ -102,6 +103,9 @@ def create_task(user, project_id, data):
         )
         save_assignees(task, assignee_ids)
         save_labels(task, data)
+        record_activity(task, "created", new=activity_values(task))
+        if parent:
+            record_activity(parent, "child_created", new={"id": task.pk, "name": task.name}, related_task_id=task.pk)
     return task
 
 
@@ -111,6 +115,10 @@ def edit_task(user, project_id, task_id, data):
         task = task_for_user(user, project, task_id)
         require_task_permission(user, project, task, "worker_edit")
         editable_project(project)
+        before = activity_values(task)
+        estimate = data.get("estimated_minutes")
+        if estimate is not None and (isinstance(estimate, bool) or not isinstance(estimate, int) or not 1 <= estimate <= 2147483647):
+            raise ValidationError({"estimated_minutes": "Indica minutos enteros positivos o null"})
         if "responsible_id" in data or "responsible_ids" in data:
             require_admin(user)
         if "description" in data:
@@ -121,13 +129,14 @@ def edit_task(user, project_id, task_id, data):
         validate_assignees(project, assignee_ids, state_rule(project, task.state_code),
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
         task.responsible_id = primary_assignee(assignee_ids, task)
-        for field in ("name", "description", "priority", "start_date", "due_date"):
+        for field in ("name", "description", "priority", "start_date", "due_date", "estimated_minutes"):
             if field in data:
                 setattr(task, field, data[field])
         task.updated_at = timezone.now()
         task.save()
         save_assignees(task, assignee_ids)
         save_labels(task, data)
+        record_changes(task, before, activity_values(task))
     return task
 
 
@@ -202,7 +211,7 @@ def validate_transition(user, project, task, target, reason):
                 pending.append(child["id"])
 
 
-def apply_state_change(project, task, target, reason, nested=False):
+def apply_state_change(project, task, target, reason, nested=False, before=None):
     if connection.vendor == "mysql":
         procedure = "sp_aplicar_estado_actividad" if nested else "sp_cambiar_estado_actividad"
         with connection.cursor() as cursor:
@@ -211,6 +220,7 @@ def apply_state_change(project, task, target, reason, nested=False):
                 pass
         task.refresh_from_db()
         return
+    before = before or activity_values(task)
     rules = definition_rules(project)
     origin = rules.get(task.state_code, task.state_code)
     destination = rules.get(target, target)
@@ -222,6 +232,7 @@ def apply_state_change(project, task, target, reason, nested=False):
         task.progress = 0
     task.updated_at = timezone.now()
     task.save()
+    record_state_change(task, before)
 
 
 def change_task_state(user, project_id, task_id, data):
@@ -279,3 +290,6 @@ def manage_dependency(user, project_id, task_id, predecessor_id, remove=False):
             if dependency_would_cycle(edges, predecessor.pk, successor.pk):
                 raise ValidationError({"detail": "La dependencia generaría un ciclo"})
             TaskDependency.objects.create(project=project, predecessor=predecessor, successor=successor)
+        action = "dependency_removed" if remove else "dependency_added"
+        record_activity(successor, action, new={"direction": "blocked_by", "id": predecessor.pk, "name": predecessor.name}, related_task_id=predecessor.pk)
+        record_activity(predecessor, action, new={"direction": "blocks", "id": successor.pk, "name": successor.name}, related_task_id=successor.pk)

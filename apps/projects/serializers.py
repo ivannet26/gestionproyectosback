@@ -81,6 +81,7 @@ class TaskCreateSerializer(StrictSerializer):
 
 
 class TaskEditSerializer(StrictSerializer):
+    estimated_minutes = serializers.IntegerField(min_value=1, max_value=2147483647, allow_null=True, required=False)
     name = serializers.CharField(max_length=180, required=False)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     priority = serializers.IntegerField(min_value=1, max_value=4, required=False, allow_null=True)
@@ -110,6 +111,11 @@ class TaskStateSerializer(StrictSerializer):
 
 class DependencySerializer(StrictSerializer):
     predecessor_id = serializers.IntegerField(min_value=1)
+
+
+class TaskRelationSerializer(StrictSerializer):
+    target_id = serializers.IntegerField(min_value=1)
+    name = serializers.CharField(max_length=70)
 
 
 class ProjectTaskStatusSerializer(StrictSerializer):

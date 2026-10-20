@@ -102,6 +102,7 @@ def task_snapshot_from_context(
         "created_at": task.created_at,
         "start_date": task.start_date,
         "due_date": task.due_date,
+        "estimated_minutes": task.estimated_minutes,
         "responsible_id": task.responsible_id,
         "responsible_name": f"{task.responsible.first_names} {task.responsible.last_names}"
         if task.responsible_id
@@ -116,6 +117,7 @@ def task_snapshot_from_context(
             "assign": manageable,
             "create_child": can_create and (admin or assigned) and metadata.get("category") not in ("done", "closed"),
             "dependencies": manageable and not task.parent_id,
+            "relations": manageable,
         },
     }
 

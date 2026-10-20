@@ -1,4 +1,4 @@
-param([ValidateSet('apps.projects.tests.test_state_templates_mysql', 'apps.projects.tests.test_quick_tasks_mysql')][string]$TestModule = 'apps.projects.tests.test_state_templates_mysql')
+param([ValidateSet('apps.projects.tests.test_state_templates_mysql', 'apps.projects.tests.test_quick_tasks_mysql', 'apps.projects.tests.test_task_detail_mysql')][string]$TestModule = 'apps.projects.tests.test_state_templates_mysql')
 $ErrorActionPreference = 'Stop'
 $taskStatusContainer = $null
 $taskStatusRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -19,13 +19,17 @@ try {
     $taskStatusContainer = $taskStatusCreated.Trim()
     $taskStatusReady = $false
     for ($taskStatusAttempt = 0; $taskStatusAttempt -lt 60; $taskStatusAttempt++) {
-        docker exec --env MYSQL_PWD $taskStatusContainer mysql --user=root --execute 'SELECT 1' 2>$null | Out-Null
-        if ($LASTEXITCODE -eq 0) { $taskStatusReady = $true; break }
+        $ErrorActionPreference = 'Continue'
+        $taskStatusProbe = docker exec --env MYSQL_PWD $taskStatusContainer mysql --protocol=TCP --host=127.0.0.1 --user=root --execute 'SELECT 1' 2>&1
+        $taskStatusProbeExit = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        if ($taskStatusProbeExit -eq 0) { $taskStatusReady = $true; break }
         if ($taskStatusAttempt % 15 -eq 0) { Write-Output 'Esperando al MySQL temporal…' }
         Start-Sleep -Seconds 1
     }
     if (-not $taskStatusReady) { throw 'El MySQL temporal no inició a tiempo.' }
-    $env:GM_TEST_MYSQL_PORT = (docker inspect --format '{{(index (index .NetworkSettings.Ports "3306/tcp") 0).HostPort}}' $taskStatusContainer).Trim()
+    $taskStatusPorts = docker inspect --format '{{json .NetworkSettings.Ports}}' $taskStatusContainer | ConvertFrom-Json
+    $env:GM_TEST_MYSQL_PORT = $taskStatusPorts.'3306/tcp'[0].HostPort
     if ($LASTEXITCODE -ne 0 -or $env:GM_TEST_MYSQL_PORT -notmatch '^\d+$') { throw 'Puerto temporal no disponible.' }
     docker exec --env MYSQL_PWD $taskStatusContainer mysql --user=root --execute 'CREATE DATABASE gm_test_task_status_templates CHARACTER SET utf8mb4'
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo crear la base nueva dedicada.' }
@@ -36,8 +40,8 @@ try {
     } finally { Pop-Location }
 } finally {
     if ($taskStatusContainer -match '^[a-f0-9]{64}$') {
-        $taskStatusOwned = docker inspect --format '{{index .Config.Labels "gm.task-status-verification"}}' $taskStatusContainer
-        if ($LASTEXITCODE -eq 0 -and $taskStatusOwned -eq 'true') {
+        $taskStatusLabels = docker inspect --format '{{json .Config.Labels}}' $taskStatusContainer | ConvertFrom-Json
+        if ($LASTEXITCODE -eq 0 -and $taskStatusLabels.'gm.task-status-verification' -eq 'true') {
             docker rm --force $taskStatusContainer | Out-Null
             Write-Output 'Contenedor de prueba y base sintética eliminados.'
         }

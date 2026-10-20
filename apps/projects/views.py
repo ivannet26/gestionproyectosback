@@ -16,6 +16,7 @@ from .serializers import (
     TaskEditSerializer,
     TaskStateSerializer,
     TaskStatusTemplateSerializer,
+    TaskRelationSerializer,
 )
 from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
 from .services.favorites import set_project_favorite
@@ -24,6 +25,8 @@ from .services.projects import create_project, project_snapshot, project_snapsho
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
 from .services.statuses import catalog_states, configure_task_states, status_configuration
 from .services.state_templates import project_templates, save_template
+from .services.activity import activity_page, cursor_value
+from .services.task_detail import detail_context, subtask_page, relation_candidates, relation_page, manage_relation
 
 
 class ProjectApiView(APIView):
@@ -154,6 +157,9 @@ class TaskStatusTemplateView(ProjectApiView):
 class TaskDetailView(ProjectApiView):
     serializer_class = TaskEditSerializer
 
+    def get(self, request, project_id, task_id):
+        return Response(detail_context(request.user, project_id, task_id))
+
     def patch(self, request, project_id, task_id):
         serializer = TaskEditSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -185,4 +191,36 @@ class TaskDependenciesView(ProjectApiView):
         serializer = DependencySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         manage_dependency(request.user, project_id, task_id, serializer.validated_data["predecessor_id"], remove=True)
+        return Response(status=204)
+
+
+class TaskActivityView(ProjectApiView):
+    def get(self, request, project_id, task_id):
+        return Response(activity_page(request.user, project_id, task_id, cursor_value(request.query_params.get("cursor"))))
+
+
+class TaskSubtasksView(ProjectApiView):
+    def get(self, request, project_id, task_id):
+        return Response(subtask_page(request.user, project_id, task_id, cursor_value(request.query_params.get("cursor"))))
+
+
+class TaskRelationCandidatesView(ProjectApiView):
+    def get(self, request, project_id, task_id):
+        return Response(relation_candidates(request.user, project_id, task_id, request.query_params))
+
+
+class TaskRelationsView(ProjectApiView):
+    def get(self, request, project_id, task_id):
+        return Response(relation_page(request.user, project_id, task_id, cursor_value(request.query_params.get("cursor"))))
+
+    def post(self, request, project_id, task_id):
+        serializer = TaskRelationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        manage_relation(request.user, project_id, task_id, serializer.validated_data)
+        return Response(status=201)
+
+
+class TaskRelationView(ProjectApiView):
+    def delete(self, request, project_id, task_id, relation_id):
+        manage_relation(request.user, project_id, task_id, relation_id=relation_id)
         return Response(status=204)
