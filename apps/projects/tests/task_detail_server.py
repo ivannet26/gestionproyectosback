@@ -23,6 +23,9 @@ def serve():
     from apps.organization.models import Specialty
     from apps.workers.models import WorkerSpecialty
     from apps.projects.models import ProjectMember
+    from apps.teams.models import Team, TeamMember
+    from django.utils import timezone
+    from datetime import timedelta
     from .test_task_detail_mysql import TaskDetailMySQLTests
 
     TaskDetailMySQLTests.setUpClass()
@@ -30,7 +33,8 @@ def serve():
     fixture.setUp()
     with connection.schema_editor() as editor:
         for model in (Specialty, WorkerSpecialty, AuthThrottle, RecoveryRequest):
-            editor.create_model(model)
+            if model._meta.db_table not in connection.introspection.table_names():
+                editor.create_model(model)
 
     fixture.area.name = "Ingeniería · pruebas aisladas"
     fixture.area.save(update_fields=["name"])
@@ -39,7 +43,14 @@ def serve():
         user.worker.first_names = name
         user.worker.save(update_fields=["first_names"])
     project = fixture.assigned_project(name="Detalle de tareas · QA", worker_edit=True, worker_contribute=True)
+    project.start_date = timezone.localdate() - timedelta(days=14)
+    project.save(update_fields=["start_date"])
     ProjectMember.objects.create(project=project, worker=second.worker, active=True)
+    specialties = [Specialty.objects.create(name=name) for name in ("Ingeniería civil", "Diseño estructural", "Revisión BIM")]
+    teams = [Team.objects.create(area=fixture.area, name=name) for name in ("Estructuras QA", "Revisión QA", "Equipo vacío QA")]
+    for team, people in ((teams[0], [fixture.worker, second]), (teams[1], [second])):
+        for person in people:
+            TeamMember.objects.create(team=team, worker=person.worker, joined_date=timezone.localdate())
     parent = fixture.task(project, name="Revisión de planos", due_date=None, responsible_ids=[fixture.worker.worker_id, second.worker_id])
     updated = fixture.request("patch", f"{project.pk}/tasks/{parent.pk}/", {"estimated_minutes": 60, "priority": 4}, fixture.admin)
     if updated.status_code != 200:
@@ -64,6 +75,7 @@ def serve():
                               "reason_task": reason_task.pk,
                               "readonly": readonly.pk, "readonly_task": readonly_task.pk, "scrum": scrum.pk,
                               "scrum_task": scrum_parent.pk, "scrum_child": scrum_child.pk}
+    credentials["context"].update({"area": fixture.area.pk, "other_area": fixture.other_area.pk, "teams": [team.pk for team in teams], "specialties": [item.pk for item in specialties]})
     Path(os.environ["GM_QA_SECRETS_PATH"]).write_text(json.dumps(credentials), encoding="utf-8")
 
     print("MySQL temporal y Django reales listos; datos exclusivamente sintéticos.", flush=True)

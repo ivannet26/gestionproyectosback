@@ -1,3 +1,4 @@
+param([ValidateSet('verify-task-detail-browser.mjs', 'verify-project-integrations-browser.mjs')][string]$BrowserTest = 'verify-task-detail-browser.mjs')
 $ErrorActionPreference = 'Stop'
 $taskDetailRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $taskDetailFront = (Resolve-Path (Join-Path $taskDetailRoot '../frontend')).Path
@@ -49,7 +50,7 @@ try {
     if (-not (Test-Path -LiteralPath $env:GM_QA_SECRETS_PATH)) { throw 'No se completó el arranque aislado.' }
     Push-Location $taskDetailFront
     try {
-        & node.exe tests/verify-task-detail-browser.mjs
+        & node.exe (Join-Path 'tests' $BrowserTest)
         if ($LASTEXITCODE -ne 0) { throw 'Falló la verificación en navegador.' }
     } finally { Pop-Location }
 } finally {

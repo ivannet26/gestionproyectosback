@@ -13,6 +13,12 @@ class LabelSerializer(StrictSerializer):
     kind = serializers.ChoiceField(choices=("technical", "nontechnical"))
 
 
+class InitialTaskStateSerializer(StrictSerializer):
+    name = serializers.CharField(max_length=70)
+    category = serializers.ChoiceField(choices=("not_started", "active", "done", "closed"))
+    color = serializers.RegexField(r"^#[0-9a-fA-F]{6}$")
+
+
 class ProjectCreateSerializer(StrictSerializer):
     name = serializers.CharField(max_length=180)
     description = serializers.CharField(max_length=10000, required=False, allow_blank=True, default="")
@@ -26,19 +32,28 @@ class ProjectCreateSerializer(StrictSerializer):
     mode = serializers.ChoiceField(choices=("available", "assigned"))
     worker_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=200)
     worker_contribute = serializers.BooleanField(default=False)
+    participant_source = serializers.ChoiceField(choices=("workers", "teams"), default="workers")
+    team_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=100)
+    initial_task_states = InitialTaskStateSerializer(many=True, required=False, allow_empty=False, max_length=50)
 
     def validate(self, attrs):
-        for key in ("area_ids", "worker_ids"):
+        for key in ("area_ids", "worker_ids", "team_ids"):
             if len(attrs[key]) != len(set(attrs[key])):
                 raise serializers.ValidationError({key: "No se permiten selecciones duplicadas"})
-        if attrs["mode"] == "assigned" and not attrs["worker_ids"]:
+        if attrs["participant_source"] == "teams" and attrs["worker_ids"] or attrs["participant_source"] == "workers" and attrs["team_ids"]:
+            raise serializers.ValidationError({"participant_source": "No envíes selecciones ocultas del otro origen"})
+        if attrs["mode"] == "assigned" and not (attrs["worker_ids"] or attrs["team_ids"]):
             raise serializers.ValidationError(
                 {"worker_ids": "Selecciona al menos un trabajador para crear con asignados"}
             )
-        if attrs["mode"] == "available" and attrs["worker_ids"]:
+        if attrs["mode"] == "available" and (attrs["worker_ids"] or attrs["team_ids"]):
             raise serializers.ValidationError({"worker_ids": "Publicar por área no asigna participantes"})
         if attrs["end_date"] is not None and attrs["end_date"] < timezone.localdate():
             raise serializers.ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
+        if "initial_task_states" in attrs:
+            names = [item["name"].casefold() for item in attrs["initial_task_states"]]
+            if len(names) != len(set(names)):
+                raise serializers.ValidationError({"initial_task_states": "No se permiten estados duplicados"})
         return attrs
 
 
@@ -65,16 +80,21 @@ class TaskCreateSerializer(StrictSerializer):
     state_code = serializers.CharField(max_length=20)
     priority = serializers.IntegerField(min_value=1, max_value=4, required=False, allow_null=True)
     due_date = serializers.DateField(required=False, allow_null=True)
+    start_date = serializers.DateField(required=False)
     responsible_id = serializers.IntegerField(min_value=1, allow_null=True, default=None)
     responsible_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=200)
     parent_id = serializers.IntegerField(min_value=1, allow_null=True, default=None)
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list, max_length=50)
     labels = LabelSerializer(many=True, required=False, default=list, max_length=50)
+    specialty_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
+    retained_label_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
 
     def validate(self, attrs):
         validate_assignee_input(attrs, self.initial_data)
         validate_labels(attrs["labels"])
+        if len(attrs.get("specialty_ids", [])) != len(set(attrs.get("specialty_ids", []))):
+            raise serializers.ValidationError({"specialty_ids": "No se permiten especialidades duplicadas"})
         if len(attrs["requirement_ids"]) != len(set(attrs["requirement_ids"])):
             raise serializers.ValidationError({"requirement_ids": "No se permiten requisitos duplicados"})
         return attrs
@@ -91,6 +111,8 @@ class TaskEditSerializer(StrictSerializer):
     responsible_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=200)
     requirement_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
     labels = LabelSerializer(many=True, required=False, max_length=50)
+    specialty_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
+    retained_label_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=50)
 
     def validate(self, attrs):
         validate_assignee_input(attrs, self.initial_data)
@@ -98,6 +120,9 @@ class TaskEditSerializer(StrictSerializer):
             raise serializers.ValidationError({"detail": "Indica los datos que quieres modificar"})
         if "labels" in attrs:
             validate_labels(attrs["labels"])
+        for field in ("specialty_ids", "retained_label_ids"):
+            if len(attrs.get(field, [])) != len(set(attrs.get(field, []))):
+                raise serializers.ValidationError({field: "No se permiten selecciones duplicadas"})
         ids = attrs.get("requirement_ids", [])
         if len(ids) != len(set(ids)):
             raise serializers.ValidationError({"requirement_ids": "No se permiten requisitos duplicados"})
@@ -107,6 +132,11 @@ class TaskEditSerializer(StrictSerializer):
 class TaskStateSerializer(StrictSerializer):
     state_code = serializers.CharField(max_length=20)
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+
+
+class TaskMoveSerializer(TaskStateSerializer):
+    before_id = serializers.IntegerField(min_value=1, allow_null=True)
+    expected_revision = serializers.CharField(min_length=64, max_length=64)
 
 
 class DependencySerializer(StrictSerializer):

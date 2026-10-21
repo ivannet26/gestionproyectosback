@@ -1,5 +1,5 @@
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from rest_framework.exceptions import NotFound, ValidationError
 
 from ..models import TaskDependency, TaskRelation
@@ -23,9 +23,9 @@ def subtask_page(user, project_id, task_id, cursor=0):
     task = task_for_user(user, project, task_id)
     tasks = tasks_for_user(user, project).filter(parent=task)
     final = [state["code"] for state in configured_states(project) if state["category"] in ("done", "closed")]
-    rows = list(tasks.filter(pk__gt=cursor).select_related("responsible").order_by("id")[:31])
+    rows = list(tasks.select_related("responsible").order_by(F("manual_order__position").asc(nulls_last=True), "id")[cursor:cursor + 31])
     return {"items": task_snapshots(rows[:30], project, user), "total": tasks.count(),
-            "completed": tasks.filter(state_code__in=final).count(), "next_cursor": rows[29].pk if len(rows) > 30 else None}
+            "completed": tasks.filter(state_code__in=final).count(), "next_cursor": cursor + 30 if len(rows) > 30 else None}
 
 
 def relation_candidates(user, project_id, task_id, query):

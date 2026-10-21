@@ -13,7 +13,7 @@ from django.utils import timezone
 from apps.teams.models import Team, TeamMember
 from apps.authentication.models import AuthToken, Role, User, UserRole
 from apps.authentication.tokens import issue_access
-from apps.organization.models import Area
+from apps.organization.models import Area, Specialty
 from apps.projects.models import (
     Project,
     ProjectFavorite,
@@ -32,6 +32,7 @@ from apps.projects.models import (
     TaskTransition,
     TaskActivity,
     TaskRelation,
+    ProjectTeam, TaskOrder,
 )
 from apps.projects.serializers import ProjectCreateSerializer
 from apps.projects.services.projects import create_project
@@ -46,6 +47,7 @@ class ProjectFlowTests(unittest.TestCase):
             raise unittest.SkipTest("Project tests require the existing explicit isolated SQLite mode")
         cls.tables = [
             Area,
+            Specialty,
             Worker,
             WorkerArea,
             Team,
@@ -71,6 +73,7 @@ class ProjectFlowTests(unittest.TestCase):
             TaskLabel,
             TaskRelation,
             TaskActivity,
+            ProjectTeam, TaskOrder,
         ]
         with connection.schema_editor() as editor:
             for model in cls.tables:

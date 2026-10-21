@@ -5,6 +5,8 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+from django.db.models.deletion import ProtectedError
 
 from apps.authentication.security import IsAdministrator
 from apps.projects.services.audit import audit_actor
@@ -16,6 +18,12 @@ from .serializers import TeamMemberCreateSerializer, TeamMemberSerializer, TeamS
 class TeamViewSet(viewsets.ModelViewSet):
     queryset = Team.objects.select_related("area").order_by("id")
     serializer_class = TeamSerializer
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError({"detail": "El equipo está asociado a proyectos. Desactívalo para conservar su historial."}) from None
 
     def get_permissions(self):
         if self.action in ("list", "retrieve", "members"):

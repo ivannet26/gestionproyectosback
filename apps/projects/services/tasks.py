@@ -1,8 +1,9 @@
+from collections import defaultdict
 from django.db import connection, models, transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskTransition
+from ..models import ProjectMember, ProjectRequirement, Task, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
 from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor, record_activity
@@ -37,13 +38,17 @@ def validate_dates(project, start_date, due_date, parent=None, task=None):
 
 
 def save_labels(task, data):
+    from .labels import save_specialties
+    if "specialty_ids" in data or "retained_label_ids" in data:
+        save_specialties(task, data)
+        return
     if "labels" not in data and "requirement_ids" not in data:
         return
     ids = data.get(
         "requirement_ids",
         list(TaskLabel.objects.filter(task=task, requirement__isnull=False).values_list("requirement_id", flat=True)),
     )
-    own = data.get("labels", list(TaskLabel.objects.filter(task=task, requirement__isnull=True).values("name", "kind")))
+    own = data.get("labels", list(TaskLabel.objects.filter(task=task, requirement__isnull=True, specialty__isnull=True).values("name", "kind")))
     requirements = list(ProjectRequirement.objects.filter(project=task.project, pk__in=ids))
     if len(requirements) != len(ids):
         raise ValidationError({"requirement_ids": "Los requisitos deben pertenecer al proyecto"})
@@ -53,7 +58,7 @@ def save_labels(task, data):
     desired += [TaskLabel(task=task, **label) for label in own]
     def label_key(label):
         return label.requirement_id, label.name, label.kind
-    existing = {label_key(label): label for label in TaskLabel.objects.filter(task=task)}
+    existing = {label_key(label): label for label in TaskLabel.objects.filter(task=task, specialty__isnull=True)}
     keys = {label_key(label) for label in desired}
     TaskLabel.objects.filter(pk__in=[label.pk for identity, label in existing.items() if identity not in keys]).delete()
     TaskLabel.objects.bulk_create([label for label in desired if label_key(label) not in existing])
@@ -83,7 +88,7 @@ def create_task(user, project_id, data):
             if parent is None or state_rule(project, parent.state_code) in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"parent_id": "La tarea padre no está disponible en este proyecto"})
             require_task_permission(user, project, parent, "worker_create")
-        start_date = parent.start_date if parent else project.start_date or timezone.localdate()
+        start_date = data.get("start_date") or (parent.start_date if parent else project.start_date or timezone.localdate())
         validate_dates(project, start_date, data.get("due_date"), parent=parent)
         validate_assignees(project, assignee_ids, rule,
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
@@ -103,6 +108,8 @@ def create_task(user, project_id, data):
         )
         save_assignees(task, assignee_ids)
         save_labels(task, data)
+        from .ordering import append_position
+        append_position(task)
         record_activity(task, "created", new=activity_values(task))
         if parent:
             record_activity(parent, "child_created", new={"id": task.pk, "name": task.name}, related_task_id=task.pk)
@@ -152,63 +159,92 @@ def has_supervision(user, project):
     )
 
 
-def validate_transition(user, project, task, target, reason):
+def transition_context(user, project, definitions=None, rules=None, legacy=None, supervision=None, *, preview=False):
+    from .projects import eligible_project_workers
+    from .statuses import configured_states
+    rows = list(Task.objects.filter(project=project).values("id", "parent_id", "state_code", "archived", "responsible_id"))
+    tasks = {row["id"]: row for row in rows}
+    children, incoming, outgoing = defaultdict(list), defaultdict(list), defaultdict(list)
+    for row in rows:
+        children[row["parent_id"]].append(row)
+    for predecessor, successor in TaskDependency.objects.filter(project=project).values_list("predecessor_id", "successor_id"):
+        incoming[successor].append(predecessor)
+        outgoing[predecessor].append(successor)
+    assignees = {row["id"]: {row["responsible_id"]} if row["responsible_id"] else set() for row in rows}
+    for task_id, worker_id in TaskAssignee.objects.filter(task__project=project).values_list("task_id", "worker_id"):
+        assignees[task_id].add(worker_id)
+    eligible = set(ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project)).values_list("worker_id", flat=True))
+    blocked_deliverables = set()
+    if preview and connection.vendor == "mysql":
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT v.actividad_id FROM v_estado_entregable v JOIN actividad a ON a.id=v.actividad_id WHERE a.proyecto_id=%s AND v.obligatorio=1 AND v.estado_revision<>'APROBADO'", [project.pk])
+            blocked_deliverables = {row[0] for row in cursor.fetchall()}
+    return {
+        "tasks": tasks, "assignees": assignees, "eligible": eligible,
+        "children": children, "incoming": incoming, "outgoing": outgoing,
+        "states": {item["code"] for item in (definitions if definitions is not None else configured_states(project))},
+        "rules": rules if rules is not None else definition_rules(project),
+        "legacy": legacy if legacy is not None else {(item["source"], item["target"]): item for item in TaskTransition.objects.values("source", "target", "reason_required", "supervision_required")},
+        "supervision": has_supervision(user, project) if supervision is None else supervision,
+        "blocked_deliverables": blocked_deliverables, "preview": preview,
+    }
+
+
+def validate_transition(user, project, task, target, reason, context=None):
     editable_project(project)
-    require_configured_state(project, target)
-    rules = definition_rules(project)
+    context = context or transition_context(user, project)
+    if target not in context["states"]:
+        raise ValidationError({"state_code": "El estado no está habilitado"})
+    rules = context["rules"]
     origin_rule = rules.get(task.state_code, task.state_code)
     target_rule = rules.get(target, target)
-    completed_codes = {"COMPLETADA"} | {code for code, rule in rules.items() if rule == "COMPLETADA"}
-    pending_codes = {"PENDIENTE", "CANCELADA"} | {code for code, rule in rules.items() if rule == "PENDIENTE"}
     if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target_rule != "CANCELADA":
         raise ValidationError({"detail": "El proyecto no permite ejecutar tareas en su estado actual"})
-    legacy = {(item["source"], item["target"]): item for item in TaskTransition.objects.filter(
-        source__in=(task.state_code, origin_rule), target__in=(target, target_rule),
-    ).values("source", "target", "supervision_required", "reason_required")}
-    transition = transition_policy(task.state_code, target, rules, legacy)
+    transition = transition_policy(task.state_code, target, rules, context["legacy"])
     if transition is None:
         raise ValidationError({"state_code": "La transición no está permitida"})
-    if transition["supervision_required"] and not has_supervision(user, project):
+    if transition["supervision_required"] and not context["supervision"]:
         raise PermissionDenied("Esta transición requiere supervisión del proyecto")
     if transition["reason_required"] and not reason:
         raise ValidationError({"reason": "Indica el motivo del cambio"})
-    validate_assignees(project, task_assignee_ids(task), target_rule)
+    people = context["assignees"].get(task.pk, set())
+    if not people and target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA"):
+        raise ValidationError({"responsible_ids": "Este estado requiere responsable activo del proyecto"})
+    if people - context["eligible"]:
+        raise ValidationError({"responsible_ids": "Cada responsable debe ser participante activo del proyecto"})
+    tasks = context["tasks"]
     if target_rule not in ("COMPLETADA", "CANCELADA"):
-        parent = task.parent
+        parent_id = task.parent_id
         visited = set()
-        while parent:
-            if parent.pk in visited or parent.archived or rules.get(parent.state_code, parent.state_code) in ("COMPLETADA", "CANCELADA"):
+        while parent_id:
+            parent = tasks.get(parent_id)
+            if parent_id in visited or parent is None or parent["archived"] or rules.get(parent["state_code"], parent["state_code"]) in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"state_code": "Reabre primero las tareas padre"})
-            visited.add(parent.pk)
-            parent = parent.parent
-    if (
-        target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA")
-        and TaskDependency.objects.filter(successor=task)
-        .exclude(predecessor__state_code__in=completed_codes, predecessor__archived=False)
-        .exists()
-    ):
-        raise ValidationError({"state_code": "Hay dependencias pendientes"})
-    if (
-        origin_rule == "COMPLETADA" and target_rule != "COMPLETADA"
-        and TaskDependency.objects.filter(predecessor=task, successor__archived=False)
-        .exclude(successor__state_code__in=pending_codes)
-        .exists()
-    ):
-        raise ValidationError({"state_code": "Replanifica primero las tareas sucesoras"})
-    descendants = list(Task.objects.filter(project=project, archived=False).values("id", "parent_id", "state_code"))
+            visited.add(parent_id)
+            parent_id = parent["parent_id"]
+    for predecessor_id in context["incoming"][task.pk]:
+        predecessor = tasks[predecessor_id]
+        if target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA") and (predecessor["archived"] or rules.get(predecessor["state_code"], predecessor["state_code"]) != "COMPLETADA"):
+            raise ValidationError({"state_code": "Hay dependencias pendientes"})
+    for successor_id in context["outgoing"][task.pk]:
+        successor = tasks[successor_id]
+        if origin_rule == "COMPLETADA" and target_rule != "COMPLETADA" and not successor["archived"] and rules.get(successor["state_code"], successor["state_code"]) not in ("PENDIENTE", "CANCELADA"):
+            raise ValidationError({"state_code": "Replanifica primero las tareas sucesoras"})
     pending = [task.pk]
     visited = set()
-    incompatible = {"COMPLETADA", "CANCELADA"} if target_rule == "COMPLETADA" else {"CANCELADA"}
+    compatible = {"COMPLETADA", "CANCELADA"} if target_rule == "COMPLETADA" else {"CANCELADA"}
     while pending and target_rule in ("COMPLETADA", "CANCELADA"):
         parent_id = pending.pop()
         if parent_id in visited:
             raise ValidationError({"state_code": "La jerarquía contiene un ciclo"})
         visited.add(parent_id)
-        for child in descendants:
-            if child["parent_id"] == parent_id:
-                if rules.get(child["state_code"], child["state_code"]) not in incompatible:
+        for child in context["children"][parent_id]:
+            if not child["archived"]:
+                if rules.get(child["state_code"], child["state_code"]) not in compatible:
                     raise ValidationError({"state_code": "Hay subtareas incompatibles con el cierre"})
                 pending.append(child["id"])
+    if context["preview"] and target_rule == "COMPLETADA" and task.pk in context["blocked_deliverables"]:
+        raise ValidationError({"state_code": "Hay entregables obligatorios sin aprobar en su última versión"})
 
 
 def apply_state_change(project, task, target, reason, nested=False, before=None):

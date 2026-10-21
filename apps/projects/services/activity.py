@@ -13,12 +13,17 @@ from .statuses import configured_states
 def activity_values(task):
     states = {state["code"]: state for state in configured_states(task.project)}
     state = states.get(task.state_code, {"code": task.state_code, "name": task.state_code})
+    labels = list(TaskLabel.objects.filter(task=task).order_by("id").values("name", "kind", "specialty_id", "specialty__name"))
+    for label in labels:
+        current = label.pop("specialty__name")
+        if current is not None:
+            label["name"] = current
     return {
         "name": task.name, "state_code": state, "priority": task.priority,
         "start_date": task.start_date.isoformat(), "due_date": task.due_date.isoformat() if task.due_date else None,
         "estimated_minutes": task.estimated_minutes,
         "responsibles": list(Worker.objects.filter(pk__in=task_assignee_ids(task)).order_by("pk").values("id", "first_names", "last_names")),
-        "labels": list(TaskLabel.objects.filter(task=task).order_by("name", "kind").values("name", "kind")),
+        "labels": labels,
     }
 
 

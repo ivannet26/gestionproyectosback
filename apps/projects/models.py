@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-from apps.organization.models import Area
+from apps.organization.models import Area, Specialty
 from apps.teams.models import Team
 from apps.workers.models import Worker
 
@@ -100,6 +100,15 @@ class ProjectMember(models.Model):
         db_table = "proyecto_miembro"
 
 
+class ProjectTeam(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, db_constraint=False, db_column="proyecto_id")
+    team = models.ForeignKey(Team, on_delete=models.PROTECT, db_constraint=False, db_column="equipo_id")
+
+    class Meta:
+        db_table = "proyecto_equipo"
+        constraints = [models.UniqueConstraint(fields=["project", "team"], name="uq_proyecto_equipo")]
+
+
 class Task(models.Model):
     id = models.BigAutoField(primary_key=True)
     project = models.ForeignKey(Project, on_delete=models.DO_NOTHING, db_column="proyecto_id")
@@ -131,6 +140,14 @@ class TaskAssignee(models.Model):
     class Meta:
         db_table = "actividad_responsable_adicional"
         constraints = [models.UniqueConstraint(fields=["task", "worker"], name="uq_actividad_responsable_adicional")]
+
+
+class TaskOrder(models.Model):
+    task = models.OneToOneField(Task, primary_key=True, on_delete=models.CASCADE, db_constraint=False, db_column="actividad_id", related_name="manual_order")
+    position = models.DecimalField(max_digits=38, decimal_places=18, db_column="posicion")
+
+    class Meta:
+        db_table = "actividad_orden"
 
 
 class TaskRelation(models.Model):
@@ -237,6 +254,7 @@ class TaskLabel(models.Model):
     )
     name = models.CharField(max_length=120, db_column="nombre")
     kind = models.CharField(max_length=20, db_column="clase")
+    specialty = models.ForeignKey(Specialty, null=True, blank=True, on_delete=models.PROTECT, db_constraint=False, db_column="especialidad_id")
 
     class Meta:
         db_table = "actividad_etiqueta"
