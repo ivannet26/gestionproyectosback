@@ -447,6 +447,7 @@ class AuthenticationFlowTests(unittest.TestCase):
         for _ in range(5):
             self.assertEqual(self.login("worker@example.com", "wrong").status_code, 401)
         self.assertEqual(self.login("worker@example.com").status_code, 429)
+        self.assertIn("Demasiados intentos", self.login("worker@example.com").json()["detail"])
 
     def test_explicit_relationships_are_authoritative_over_legacy_primary_area(self):
         user = self.account("WORK", "worker@example.com", "TRABAJADOR")
