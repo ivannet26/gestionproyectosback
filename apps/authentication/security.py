@@ -59,7 +59,13 @@ def _throttle_key(request, email, scope):
 def check_throttle(request, email, scope):
     record = AuthThrottle.objects.filter(pk=_throttle_key(request, email, scope)).first()
     if record and record.blocked_until and record.blocked_until > timezone.now():
-        raise Throttled(wait=max(1, int((record.blocked_until - timezone.now()).total_seconds())))
+        wait = max(1, int((record.blocked_until - timezone.now()).total_seconds()))
+        minutes = (wait + 59) // 60
+        unit = "minuto" if minutes == 1 else "minutos"
+        raise Throttled(
+            wait=wait,
+            detail=f"Demasiados intentos fallidos. Reintenta en {minutes} {unit}.",
+        )
 
 
 def record_failure(request, email, scope):
