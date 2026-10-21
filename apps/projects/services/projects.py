@@ -11,7 +11,7 @@ from apps.organization.services.areas import active_area_ids
 from apps.workers.models import Worker
 from apps.workers.services.access import eligible_workers
 
-from ..models import Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType
+from ..models import Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType, ProjectTeam
 from .access import can_create_tasks, require_admin
 from .audit import audit_actor
 from .statuses import status_configuration
@@ -50,6 +50,7 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         },
     }
     if detailed:
+        from .teams import team_options
         result["is_favorite"] = ProjectFavorite.objects.filter(project=project, user=user).exists()
         members = ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project))
         if not admin:
@@ -60,6 +61,8 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         ]
         result["requirements"] = list(ProjectRequirement.objects.filter(project=project).values("id", "name", "kind"))
         result["task_states"] = status_configuration(project, user)
+        result["team_ids"] = list(ProjectTeam.objects.filter(project=project).values_list("team_id", flat=True)) if admin else []
+        result["assignment_teams"] = team_options(project.area_id, project=project) if admin else []
     return result
 
 
@@ -93,6 +96,8 @@ def project_snapshots(projects, user):
 
 
 def create_project(user, data):
+    from .teams import team_options
+    from .statuses import resolve_states
     require_admin(user)
     if len(data.get("area_ids", [])) != 1:
         raise ValidationError({"area_ids": "Selecciona exactamente un área"})
@@ -105,10 +110,17 @@ def create_project(user, data):
             raise ValidationError({"end_date": "La fecha final no puede ser anterior al inicio"})
         list(Area.objects.select_for_update().filter(pk__in=data["area_ids"]).order_by("pk"))
         areas = active_area_ids(data["area_ids"])
-        list(Worker.objects.select_for_update().filter(pk__in=data["worker_ids"]).order_by("pk"))
-        list(User.objects.select_for_update().filter(worker_id__in=data["worker_ids"]).order_by("pk"))
-        workers = list(eligible_workers(areas).filter(pk__in=data["worker_ids"]))
-        if len(workers) != len(data["worker_ids"]):
+        worker_ids = data.get("worker_ids", [])
+        team_ids = data.get("team_ids", [])
+        if data.get("participant_source", "workers") == "teams":
+            teams = team_options(area_id, ids=team_ids, lock=True)
+            if any(not team["eligible_count"] for team in teams):
+                raise ValidationError({"team_ids": "Cada equipo seleccionado debe aportar integrantes elegibles"})
+            worker_ids = sorted({person["id"] for team in teams for person in team["members"] if person["eligible"]})
+        list(Worker.objects.select_for_update().filter(pk__in=worker_ids).order_by("pk"))
+        list(User.objects.select_for_update().filter(worker_id__in=worker_ids).order_by("pk"))
+        workers = list(eligible_workers(areas).filter(pk__in=worker_ids))
+        if len(workers) != len(worker_ids):
             raise ValidationError({"worker_ids": "Hay trabajadores no elegibles para el área seleccionada"})
         if (
             not ProjectType.objects.filter(pk="GENERAL").exists()
@@ -133,6 +145,10 @@ def create_project(user, data):
             updated_at=timezone.now(),
         )
         ProjectMember.objects.bulk_create([ProjectMember(project=project, worker=worker) for worker in workers])
+        ProjectTeam.objects.bulk_create([ProjectTeam(project=project, team_id=pk) for pk in team_ids])
+        if "initial_task_states" in data:
+            resolved, _ = resolve_states(project, [{**state, "code": f"draft_{index}"} for index, state in enumerate(data["initial_task_states"])])
+            ProjectTaskStatus.objects.bulk_create([ProjectTaskStatus(project=project, position=index, **state) for index, state in enumerate(resolved)])
     return project
 
 

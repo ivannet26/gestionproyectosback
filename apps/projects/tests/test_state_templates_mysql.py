@@ -10,7 +10,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.recorder import MigrationRecorder
 
-from apps.projects.models import ProjectMember, Task, TaskAssignee, TaskDependency, TaskStateDefinition, TaskStatusTemplate
+from apps.projects.models import ProjectMember, Task, TaskAssignee, TaskDependency, TaskStateDefinition, TaskStatusTemplate, TaskActivity, TaskRelation, ProjectTeam, TaskOrder
 from apps.projects.services.audit import audit_actor
 from . import test_state_templates as template_tests
 from . import test_projects as fixtures
@@ -43,7 +43,7 @@ class StateTemplatesMySQLTests(unittest.TestCase):
             raise RuntimeError("The dedicated database must be empty; existing tables will not be removed")
         previous = MigrationLoader(None).project_state([("proyectos", "0009_task_assignees")])
         labels = (
-            "organization.Area", "workers.Worker", "workers.WorkerArea", "autenticacion.User",
+            "organization.Area", "organization.Specialty", "workers.Worker", "workers.WorkerArea", "teams.Team", "teams.TeamMember", "autenticacion.User",
             "autenticacion.Role", "autenticacion.UserRole", "autenticacion.AuthToken", "proyectos.ProjectType",
             "proyectos.ProjectState", "proyectos.TaskState", "proyectos.TaskTransition", "proyectos.Project",
             "proyectos.ProjectFavorite", "proyectos.ProjectMember", "proyectos.ProjectRequirement", "proyectos.ProjectTaskStatus",
@@ -52,6 +52,9 @@ class StateTemplatesMySQLTests(unittest.TestCase):
         cls.labels = labels
         with connection.schema_editor() as editor:
             for label in labels:
+                if label.startswith("teams."):
+                    editor.create_model(apps.get_model(label))
+                    continue
                 historical = previous.apps.get_model(label)
                 editor.create_model(historical if historical._meta.managed else apps.get_model(label))
         MigrationRecorder(connection).ensure_schema()
@@ -67,12 +70,25 @@ class StateTemplatesMySQLTests(unittest.TestCase):
         with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1"}):
             instance = migration.Migration("0010_task_status_templates", "proyectos")
             MigrationExecutor(connection).apply_migration(previous, instance)
-        cls.tables = [apps.get_model(label) for label in labels] + [TaskStateDefinition, TaskStatusTemplate]
+        with connection.schema_editor() as editor:
+            editor.create_model(TaskRelation)
+            editor.create_model(TaskActivity)
+        cls.tables = [apps.get_model(label) for label in labels] + [TaskStateDefinition, TaskStatusTemplate, TaskRelation, TaskActivity]
+        integration = import_module("apps.projects.migrations.0013_project_teams_specialties_order")
+        state = MigrationLoader(None).project_state([("proyectos", "0012_task_detail"), ("teams", "0001_initial")])
+        with patch.dict(os.environ, {"PROJECT_INTEGRATION_MAINTENANCE": "1"}):
+            MigrationExecutor(connection).apply_migration(state, integration.Migration("0013_project_teams_specialties_order", "proyectos"))
+        cls.tables += [ProjectTeam, TaskOrder]
+        direct = import_module("apps.projects.migrations.0014_task_direct_move")
+        state = MigrationLoader(None).project_state([("proyectos", "0013_project_teams_specialties_order")])
+        with patch.dict(os.environ, {"TASK_MOVE_MIGRATION_MAINTENANCE": "1"}):
+            MigrationExecutor(connection).apply_migration(state, direct.Migration("0014_task_direct_move", "proyectos"))
 
     @classmethod
     def tearDownClass(cls):
         with connection.cursor() as cursor:
             cursor.execute("DROP TRIGGER bu_actividad_estructura")
+            cursor.execute("DROP PROCEDURE sp_aplicar_estado_actividad_modo")
             for name in migration.ROUTINES + ("sp_aplicar_estado_actividad",):
                 cursor.execute(f"DROP PROCEDURE {name}")
             cursor.execute("DROP FUNCTION fn_regla_estado_actividad")
@@ -193,10 +209,13 @@ class StateTemplatesMySQLTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 migration.restore(apps, editor)
         TaskStatusTemplate.objects.all().delete()
-        with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1"}), connection.schema_editor() as editor:
+        direct = import_module("apps.projects.migrations.0014_task_direct_move")
+        with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1", "TASK_MOVE_MIGRATION_MAINTENANCE": "1"}), connection.schema_editor() as editor:
+            direct.restore(apps, editor)
             migration.restore(apps, editor)
             with connection.cursor() as cursor:
                 migration.review(cursor)
             migration.install(apps, editor)
-        with connection.cursor() as cursor:
-            migration.review(cursor, installed=True)
+            with connection.cursor() as cursor:
+                migration.review(cursor, installed=True)
+            direct.install(apps, editor)

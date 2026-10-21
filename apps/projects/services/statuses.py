@@ -2,7 +2,7 @@ import hashlib
 import json
 import uuid
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Count
 from rest_framework.exceptions import ValidationError
 
@@ -105,8 +105,9 @@ def resolve_states(project, requested):
     return resolved, identities
 
 
-def reassign_tasks(user, project, removed, identities, assignments):
+def reassign_tasks(user, project, removed, identities, assignments, previous_states=None):
     from .tasks import apply_state_change, validate_transition
+    from .activity import activity_values, record_state_change
 
     destinations = {item["source"]: item for item in assignments}
     used = set(Task.objects.filter(project=project, state_code__in=removed).values_list("state_code", flat=True))
@@ -128,11 +129,18 @@ def reassign_tasks(user, project, removed, identities, assignments):
                     if task.archived:
                         if state_rule(project, task.state_code) != state_rule(project, target):
                             raise ValidationError({"reassignments": "Para tareas archivadas elige un destino de la misma fase funcional"})
+                        before = activity_values(task)
+                        if previous_states:
+                            before["state_code"] = next((state for state in previous_states if state["code"] == task.state_code), before["state_code"])
                         task.state_code = target
                         task.save(update_fields=["state_code"])
+                        record_state_change(task, before)
                     else:
                         validate_transition(user, project, task, target, item["reason"])
-                        apply_state_change(project, task, target, item["reason"], nested=True)
+                        before = activity_values(task)
+                        if previous_states:
+                            before["state_code"] = next((state for state in previous_states if state["code"] == task.state_code), before["state_code"])
+                        apply_state_change(project, task, target, item["reason"], nested=True, before=before)
             except ValidationError as error:
                 failure = error
             else:
@@ -151,13 +159,16 @@ def configure_task_states(user, project_id, data):
         if data["revision"] != previous["revision"]:
             raise ValidationError({"revision": "La configuración cambió. Vuelve a cargarla antes de guardar"})
         requested = data["states"] if data["template"] == "custom" else catalog_states()
+        if connection.vendor == "mysql":
+            with connection.cursor() as cursor:
+                cursor.execute("SET @gm_estados_anteriores = %s", [json.dumps({state["code"]: state for state in previous["states"]})])
         states, identities = resolve_states(project, requested)
         removed = ({state["code"] for state in previous["states"]} | set(previous["usage"])) - set(identities.values())
         ProjectTaskStatus.objects.filter(project=project).delete()
         ProjectTaskStatus.objects.bulk_create([
             ProjectTaskStatus(project=project, position=position, **state) for position, state in enumerate(states)
         ])
-        reassign_tasks(user, project, removed, identities, data.get("reassignments", []))
+        reassign_tasks(user, project, removed, identities, data.get("reassignments", []), previous["states"])
         if data["template"] == "standard":
             ProjectTaskStatus.objects.filter(project=project).delete()
         return status_configuration(project, user)

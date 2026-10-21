@@ -13,7 +13,7 @@ from django.utils import timezone
 from apps.teams.models import Team, TeamMember
 from apps.authentication.models import AuthToken, Role, User, UserRole
 from apps.authentication.tokens import issue_access
-from apps.organization.models import Area
+from apps.organization.models import Area, Specialty
 from apps.projects.models import (
     Project,
     ProjectFavorite,
@@ -30,6 +30,9 @@ from apps.projects.models import (
     TaskStateDefinition,
     TaskStatusTemplate,
     TaskTransition,
+    TaskActivity,
+    TaskRelation,
+    ProjectTeam, TaskOrder,
 )
 from apps.projects.serializers import ProjectCreateSerializer
 from apps.projects.services.projects import create_project
@@ -44,6 +47,7 @@ class ProjectFlowTests(unittest.TestCase):
             raise unittest.SkipTest("Project tests require the existing explicit isolated SQLite mode")
         cls.tables = [
             Area,
+            Specialty,
             Worker,
             WorkerArea,
             Team,
@@ -67,6 +71,9 @@ class ProjectFlowTests(unittest.TestCase):
             TaskAssignee,
             TaskDependency,
             TaskLabel,
+            TaskRelation,
+            TaskActivity,
+            ProjectTeam, TaskOrder,
         ]
         with connection.schema_editor() as editor:
             for model in cls.tables:
@@ -1061,5 +1068,8 @@ class ProjectPolicyTests(unittest.TestCase):
                     with audit_actor(actor):
                         raise ValueError("synthetic failure")
                 cursor = cursor_factory.return_value.__enter__.return_value
-                self.assertEqual(cursor.execute.call_args_list[0].args, ("SET @gm_usuario_id = %s", [41]))
-                self.assertEqual(cursor.execute.call_args_list[-1].args, ("SET @gm_usuario_id = NULL",))
+                statement, values = cursor.execute.call_args_list[0].args
+                self.assertEqual(statement, "SET @gm_usuario_id = %s, @gm_operacion_id = %s")
+                self.assertEqual(values[0], 41)
+                self.assertEqual(len(values[1]), 36)
+                self.assertEqual(cursor.execute.call_args_list[-1].args, ("SET @gm_usuario_id = NULL, @gm_operacion_id = NULL, @gm_estados_anteriores = NULL",))

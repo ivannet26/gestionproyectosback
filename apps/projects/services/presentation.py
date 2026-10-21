@@ -1,5 +1,6 @@
 from collections import defaultdict
 from django.db.models import Q
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
 from .statuses import configured_states
@@ -7,9 +8,13 @@ from .state_categories import definition_rules, transition_policy
 
 
 def task_snapshots(tasks, project, user):
+    from .ordering import order_context
+    from .tasks import transition_context, validate_transition
     tasks = list(tasks)
     if not tasks:
         return []
+    positions, move_revision = order_context(project)
+    tasks.sort(key=lambda task: (positions.get(task.pk) is None, positions.get(task.pk, 0), task.pk))
     admin = user.global_role == "ADMINISTRADOR"
     terminal = project.state_code in ("FINALIZADO", "CANCELADO")
     manageable = admin and not terminal
@@ -59,7 +64,10 @@ def task_snapshots(tasks, project, user):
             "id": assignment.worker_id,
             "name": f"{assignment.worker.first_names} {assignment.worker.last_names}",
         }
-    for label in TaskLabel.objects.filter(task__in=tasks).values("task_id", "id", "requirement_id", "name", "kind"):
+    for label in TaskLabel.objects.filter(task__in=tasks).values("task_id", "id", "requirement_id", "name", "kind", "specialty_id", "specialty__name"):
+        specialty_name = label.pop("specialty__name")
+        if specialty_name is not None:
+            label["name"] = specialty_name
         labels[label.pop("task_id")].append(label)
     dependencies = TaskDependency.objects.filter(successor__in=tasks)
     if not admin:
@@ -70,7 +78,7 @@ def task_snapshots(tasks, project, user):
     dependencies_by_task = defaultdict(list)
     for successor_id, predecessor_id in dependencies.values_list("successor_id", "predecessor_id"):
         dependencies_by_task[successor_id].append(predecessor_id)
-    return [
+    snapshots = [
         task_snapshot_from_context(
             task, user, states, labels[task.pk], dependencies_by_task[task.pk],
             transitions_by_state[task.state_code], admin=admin, terminal=terminal, manageable=manageable,
@@ -80,6 +88,23 @@ def task_snapshots(tasks, project, user):
         )
         for task in tasks
     ]
+    for snapshot in snapshots:
+        snapshot["move_revision"] = move_revision
+        snapshot["manual_position"] = str(positions[snapshot["id"]]) if snapshot["id"] in positions else None
+    if any(item["permissions"]["state"] for item in snapshots):
+        context = transition_context(user, project, definitions, rules, legacy, supervision, preview=True)
+        by_id = {task.pk: task for task in tasks}
+        for snapshot in snapshots:
+            snapshot["move_targets"] = []
+            for target in states if snapshot["permissions"]["state"] else []:
+                if target == snapshot["state_code"]:
+                    continue
+                try:
+                    validate_transition(user, project, by_id[snapshot["id"]], target, "", context, direct=True)
+                except (PermissionDenied, ValidationError):
+                    continue
+                snapshot["move_targets"].append(target)
+    return snapshots
 
 
 def task_snapshot_from_context(
@@ -102,6 +127,7 @@ def task_snapshot_from_context(
         "created_at": task.created_at,
         "start_date": task.start_date,
         "due_date": task.due_date,
+        "estimated_minutes": task.estimated_minutes,
         "responsible_id": task.responsible_id,
         "responsible_name": f"{task.responsible.first_names} {task.responsible.last_names}"
         if task.responsible_id
@@ -116,6 +142,7 @@ def task_snapshot_from_context(
             "assign": manageable,
             "create_child": can_create and (admin or assigned) and metadata.get("category") not in ("done", "closed"),
             "dependencies": manageable and not task.parent_id,
+            "relations": manageable,
         },
     }
 

@@ -1,6 +1,8 @@
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db.models.deletion import ProtectedError
+from rest_framework.exceptions import ValidationError
 
 from apps.authentication.security import IsAdministrator
 from .models import Area, Specialty
@@ -36,6 +38,12 @@ class SpecialtyViewSet(viewsets.ModelViewSet):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
     permission_classes = [IsAdministrator]
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError({"detail": "La especialidad está asociada a tareas. Retira sus asociaciones antes de eliminarla."}) from None
 
     def get_queryset(self):
         queryset = super().get_queryset()

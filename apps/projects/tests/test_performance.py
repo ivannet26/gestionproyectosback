@@ -12,21 +12,23 @@ from django.utils import timezone
 from apps.teams.models import Team, TeamMember
 from apps.authentication.models import AuthThrottle, AuthToken, Invitation, RecoveryRequest, Role, User, UserRole
 from apps.authentication.tokens import InvalidToken, consume_stored, digest_token, issue_access, issue_stored
-from apps.organization.models import Area
+from apps.organization.models import Area, Specialty
 from apps.workers.models import Worker, WorkerArea
 from apps.workers.services.areas import area_summaries, area_summary
 from apps.projects.models import (
     Project, ProjectFavorite, ProjectMember, ProjectRequirement, ProjectState, ProjectTaskStatus, ProjectType,
-    Task, TaskAssignee, TaskDependency, TaskLabel, TaskState, TaskTransition, TaskStateDefinition, TaskStatusTemplate,
+    Task, TaskAssignee, TaskDependency, TaskLabel, TaskState, TaskTransition, TaskStateDefinition, TaskStatusTemplate, TaskActivity, TaskRelation,
+    ProjectTeam, TaskOrder,
 )
 from . import test_projects
 
 
 class PerformanceRegressionTests(unittest.TestCase):
     tables = [
-        Area, Worker, WorkerArea, Team, TeamMember, User, Role, UserRole, AuthToken, Invitation, RecoveryRequest, AuthThrottle,
+        Area, Specialty, Worker, WorkerArea, Team, TeamMember, User, Role, UserRole, AuthToken, Invitation, RecoveryRequest, AuthThrottle,
         ProjectType, ProjectState, TaskState, TaskTransition, Project, ProjectFavorite, ProjectMember, ProjectRequirement,
-        ProjectTaskStatus, TaskStateDefinition, TaskStatusTemplate, Task, TaskAssignee, TaskDependency, TaskLabel,
+        ProjectTaskStatus, TaskStateDefinition, TaskStatusTemplate, Task, TaskAssignee, TaskDependency, TaskLabel, TaskRelation, TaskActivity,
+        ProjectTeam, TaskOrder,
     ]
 
     @classmethod
