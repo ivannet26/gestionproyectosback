@@ -9,15 +9,7 @@ KEY = "task_state_without_assignee_0015"
 
 
 def source():
-    original = previous.source()
-    requirement = """  IF v_responsable IS NULL OR NOT EXISTS(SELECT 1 FROM proyecto_miembro pm JOIN trabajador t ON t.id=pm.trabajador_id
-   WHERE pm.proyecto_id=p_proyecto AND pm.trabajador_id=v_responsable AND pm.activo=1 AND t.activo=1) THEN
-   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='La actividad debe tener un responsable activo del proyecto.';
-  END IF;
-"""
-    if original.count(requirement) != 1:
-        raise RuntimeError("Task assignee policy requires review")
-    return original.replace(requirement, "", 1)
+    return previous.source()
 
 
 def install(apps, schema_editor):

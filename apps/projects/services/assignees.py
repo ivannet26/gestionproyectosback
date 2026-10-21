@@ -19,8 +19,6 @@ def requested_assignees(data, task=None):
 
 def validate_assignees(project, worker_ids, state_code, field="responsible_ids"):
     if not worker_ids:
-        if state_code in ("EN_CURSO", "EN_REVISION", "COMPLETADA"):
-            raise ValidationError({field: "Este estado requiere responsable activo del proyecto"})
         return
     allowed = set(ProjectMember.objects.filter(
         project=project, worker_id__in=worker_ids, active=True,

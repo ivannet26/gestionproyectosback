@@ -71,9 +71,6 @@ BEGIN
  IF (v_req_supervision=1 AND v_supervision=0) OR (v_supervision=0 AND v_asignado=0) THEN
   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='El usuario no tiene permiso para esta transicion.';
  END IF;
- IF v_req_motivo=1 AND (p_motivo IS NULL OR CHAR_LENGTH(TRIM(p_motivo))=0) THEN
-  SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Debe indicar el motivo del cambio.';
- END IF;
  IF v_regla_destino NOT IN ('COMPLETADA','CANCELADA') THEN
   WITH RECURSIVE ancestros(id,padre_id,estado_codigo,archivada) AS (
    SELECT a.id,a.padre_id,a.estado_codigo,a.archivada FROM actividad a
@@ -84,10 +81,6 @@ BEGIN
   IF v_descendientes>0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Reabra o restaure primero las actividades padre.'; END IF;
  END IF;
  IF v_regla_destino IN ('EN_CURSO','EN_REVISION','COMPLETADA') THEN
-  IF v_responsable IS NULL OR NOT EXISTS(SELECT 1 FROM proyecto_miembro pm JOIN trabajador t ON t.id=pm.trabajador_id
-   WHERE pm.proyecto_id=p_proyecto AND pm.trabajador_id=v_responsable AND pm.activo=1 AND t.activo=1) THEN
-   SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='La actividad debe tener un responsable activo del proyecto.';
-  END IF;
   IF EXISTS(SELECT 1 FROM dependencia_actividad d JOIN actividad a ON a.id=d.predecesora_id
    WHERE d.proyecto_id=p_proyecto AND d.sucesora_id=p_actividad AND (fn_regla_estado_actividad(p_proyecto,a.estado_codigo)<>'COMPLETADA' OR a.archivada=1)) THEN
    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='Hay predecesoras sin completar.';

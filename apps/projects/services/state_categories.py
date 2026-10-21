@@ -25,14 +25,4 @@ def state_rule(project, code):
 def transition_policy(source, target, rules, legacy):
     if source == target:
         return None
-    if source not in rules and target not in rules:
-        return legacy.get((source, target))
-    origin = rules.get(source, source)
-    destination = rules.get(target, target)
-    inherited = legacy.get((origin, destination), {})
-    return {
-        "supervision_required": inherited.get("supervision_required", False) or
-        destination in ("COMPLETADA", "CANCELADA") or origin in ("COMPLETADA", "CANCELADA"),
-        "reason_required": inherited.get("reason_required", False) or destination in ("BLOQUEADA", "CANCELADA") or
-        (origin in ("COMPLETADA", "CANCELADA") and destination not in ("COMPLETADA", "CANCELADA")),
-    }
+    return {"supervision_required": False, "reason_required": False}

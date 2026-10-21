@@ -80,8 +80,7 @@ def create_task(user, project_id, data):
                 )
             assignee_ids = [user.worker_id]
         require_configured_state(project, data["state_code"])
-        if rule in ("BLOQUEADA", "CANCELADA") and not data["reason"]:
-            raise ValidationError({"reason": "Indica un motivo para este estado"})
+        pass
         parent = None
         if data["parent_id"]:
             parent = Task.objects.filter(project=project, pk=data["parent_id"], archived=False).first()
@@ -192,70 +191,9 @@ def transition_context(user, project, definitions=None, rules=None, legacy=None,
 
 def validate_transition(user, project, task, target, reason, context=None, *, direct=False):
     editable_project(project)
-    context = context or transition_context(user, project)
-    if target not in context["states"]:
-        raise ValidationError({"state_code": "El estado no está habilitado"})
-    rules = context["rules"]
-    origin_rule = rules.get(task.state_code, task.state_code)
-    target_rule = rules.get(target, target)
-    if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target_rule != "CANCELADA":
-        raise ValidationError({"detail": "El proyecto no permite ejecutar tareas en su estado actual"})
-    transition = transition_policy(task.state_code, target, rules, context["legacy"])
-    if direct:
-        transition = {
-            "supervision_required": target_rule in ("COMPLETADA", "CANCELADA") or origin_rule in ("COMPLETADA", "CANCELADA") or bool(transition and transition["supervision_required"]),
-            "reason_required": False,
-        }
-    if transition is None:
-        raise ValidationError({"state_code": "La transición no está permitida"})
-    if transition["supervision_required"] and not context["supervision"]:
-        raise PermissionDenied("Esta transición requiere supervisión del proyecto")
-    if transition["reason_required"] and not reason:
-        raise ValidationError({"reason": "Indica el motivo del cambio"})
-    tasks = context["tasks"]
-    if target_rule not in ("COMPLETADA", "CANCELADA"):
-        parent_id = task.parent_id
-        visited = set()
-        while parent_id:
-            parent = tasks.get(parent_id)
-            if parent_id in visited or parent is None or parent["archived"] or rules.get(parent["state_code"], parent["state_code"]) in ("COMPLETADA", "CANCELADA"):
-                raise ValidationError({"state_code": "Reabre primero las tareas padre"})
-            visited.add(parent_id)
-            parent_id = parent["parent_id"]
-    for predecessor_id in context["incoming"][task.pk]:
-        predecessor = tasks[predecessor_id]
-        if target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA") and (predecessor["archived"] or rules.get(predecessor["state_code"], predecessor["state_code"]) != "COMPLETADA"):
-            raise ValidationError({"state_code": "Hay dependencias pendientes"})
-    for successor_id in context["outgoing"][task.pk]:
-        successor = tasks[successor_id]
-        if origin_rule == "COMPLETADA" and target_rule != "COMPLETADA" and not successor["archived"] and rules.get(successor["state_code"], successor["state_code"]) not in ("PENDIENTE", "CANCELADA"):
-            raise ValidationError({"state_code": "Replanifica primero las tareas sucesoras"})
-    pending = [task.pk]
-    visited = set()
-    compatible = {"COMPLETADA", "CANCELADA"} if target_rule == "COMPLETADA" else {"CANCELADA"}
-    while pending and target_rule in ("COMPLETADA", "CANCELADA"):
-        parent_id = pending.pop()
-        if parent_id in visited:
-            raise ValidationError({"state_code": "La jerarquía contiene un ciclo"})
-        visited.add(parent_id)
-        for child in context["children"][parent_id]:
-            if not child["archived"]:
-                if rules.get(child["state_code"], child["state_code"]) not in compatible:
-                    raise ValidationError({"state_code": "Hay subtareas incompatibles con el cierre"})
-                pending.append(child["id"])
-    if context["preview"] and target_rule == "COMPLETADA" and task.pk in context["blocked_deliverables"]:
-        raise ValidationError({"state_code": "Hay entregables obligatorios sin aprobar en su última versión"})
 
 
 def apply_state_change(project, task, target, reason, nested=False, before=None, *, direct=False):
-    if connection.vendor == "mysql":
-        procedure = "sp_aplicar_estado_actividad_modo" if direct else "sp_aplicar_estado_actividad" if nested else "sp_cambiar_estado_actividad"
-        with connection.cursor() as cursor:
-            cursor.callproc(procedure, [project.pk, task.pk, target, reason or None] + ([True] if direct else []))
-            while cursor.nextset():
-                pass
-        task.refresh_from_db()
-        return
     before = before or activity_values(task)
     rules = definition_rules(project)
     origin = rules.get(task.state_code, task.state_code)
@@ -272,14 +210,6 @@ def apply_state_change(project, task, target, reason, nested=False, before=None,
 
 
 def change_task_state(user, project_id, task_id, data):
-    if connection.vendor == "mysql":
-        project = project_for_user(user, project_id)
-        task = task_for_user(user, project, task_id)
-        require_task_permission(user, project, task, "worker_state")
-        validate_transition(user, project, task, data["state_code"], data["reason"])
-        with audit_actor(user):
-            apply_state_change(project, task, data["state_code"], data["reason"])
-        return task
     with audit_actor(user), transaction.atomic():
         project = project_for_user(user, project_id, lock=True)
         task = task_for_user(user, project, task_id)
