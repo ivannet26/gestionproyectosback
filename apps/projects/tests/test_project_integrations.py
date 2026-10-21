@@ -178,7 +178,6 @@ class ProjectIntegrationTests(unittest.TestCase):
         project = self.assigned_project()
         one = self.task(project, responsible_id=self.worker.worker_id)
         two = self.task(project)
-        self.assertEqual(self.move(project, one, "BLOQUEADA").status_code, 400)
         self.assertEqual(self.move(project, one, "EN_CURSO", user=self.worker).status_code, 403)
         other = self.task(self.assigned_project())
         self.assertEqual(self.move(project, one, "EN_CURSO", other.pk).status_code, 400)
@@ -201,12 +200,34 @@ class ProjectIntegrationTests(unittest.TestCase):
         project = self.assigned_project()
         project.start_date = self.today - timedelta(days=20)
         project.save()
-        task = self.task(project, start_date=str(self.today - timedelta(days=10)), due_date=str(self.today - timedelta(days=2)))
+        for values in ({"start_date": str(self.today - timedelta(days=10))}, {"due_date": str(self.today - timedelta(days=2))}):
+            result = self.request("post", f"{project.pk}/tasks/", self.task_payload(**values), self.admin)
+            self.assertEqual(result.status_code, 400, result.content)
+        self.assertFalse(Task.objects.exists())
+        task = self.task(project)
+        Task.objects.filter(pk=task.pk).update(start_date=self.today - timedelta(days=10), due_date=self.today - timedelta(days=2))
+        task.refresh_from_db()
+        self.assertEqual(task.start_date, self.today - timedelta(days=10))
+        self.assertEqual(self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"priority": 2}, self.admin).status_code, 200)
+        task.refresh_from_db()
         self.assertEqual(task.start_date, self.today - timedelta(days=10))
         response = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"due_date": str(self.today - timedelta(days=1))}, self.admin)
         self.assertEqual(response.status_code, 200, response.content)
         invalid = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"start_date": str(self.today - timedelta(days=21))}, self.admin)
         self.assertEqual(invalid.status_code, 400)
+
+    def test_direct_move_reaches_nonsequential_states_without_manual_reason(self):
+        project = self.assigned_project()
+        task = self.task(project, responsible_id=self.worker.worker_id)
+        normal = self.request("post", f"{project.pk}/tasks/{task.pk}/state/", {"state_code": "COMPLETADA", "reason": ""}, self.admin)
+        self.assertEqual(normal.status_code, 400)
+        for state in ("COMPLETADA", "BLOQUEADA", "CANCELADA", "OBSERVADA", "PENDIENTE"):
+            self.assertIn(state, self.snapshot(project, task)["move_targets"])
+            result = self.move(project, task, state)
+            self.assertEqual(result.status_code, 200, result.content)
+            task.refresh_from_db()
+            self.assertEqual(task.state_code, state)
+            self.assertIsNone(task.reason)
 
     def test_move_destinations_respect_dependencies_subtasks_and_noop_history(self):
         project = self.assigned_project()

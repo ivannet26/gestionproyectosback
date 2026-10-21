@@ -59,6 +59,8 @@ def serve():
     fixture.task(project, parent_id=parent.pk, name="Cálculo aprobado", state_code="COMPLETADA", responsible_id=fixture.worker.worker_id, due_date=None)
     related = fixture.task(project, name="Informe técnico", due_date=None)
     reason_task = fixture.task(project, name="Transición con motivo", due_date=None, responsible_id=fixture.worker.worker_id)
+    from apps.projects.models import Task
+    Task.objects.filter(project=project).update(start_date=project.start_date)
     readonly = fixture.assigned_project(name="Proyecto de solo lectura")
     readonly_task = fixture.task(readonly, name="Consulta sin modificación", responsible_id=fixture.worker.worker_id)
     scrum = fixture.assigned_project(name="Scrum · categoría funcional", worker_edit=True, worker_contribute=True)

@@ -3,7 +3,7 @@ from django.db import connection, models, transaction
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
-from ..models import ProjectMember, ProjectRequirement, Task, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
+from ..models import ProjectMember, ProjectRequirement, Task, TaskDependency, TaskLabel, TaskTransition
 from ..serializers import validate_labels
 from .access import project_for_user, require_admin, require_task_creation, require_task_permission, task_for_user
 from .audit import audit_actor, record_activity
@@ -88,7 +88,12 @@ def create_task(user, project_id, data):
             if parent is None or state_rule(project, parent.state_code) in ("COMPLETADA", "CANCELADA"):
                 raise ValidationError({"parent_id": "La tarea padre no está disponible en este proyecto"})
             require_task_permission(user, project, parent, "worker_create")
-        start_date = data.get("start_date") or (parent.start_date if parent else project.start_date or timezone.localdate())
+        today = timezone.localdate()
+        start_date = data.get("start_date") or max(today, parent.start_date if parent else project.start_date or today)
+        if start_date < today:
+            raise ValidationError({"start_date": "Las tareas nuevas deben iniciar hoy o después"})
+        if data.get("due_date") and data["due_date"] < today:
+            raise ValidationError({"due_date": "La fecha límite de una tarea nueva no puede preceder a hoy"})
         validate_dates(project, start_date, data.get("due_date"), parent=parent)
         validate_assignees(project, assignee_ids, rule,
                            "responsible_ids" if "responsible_ids" in data else "responsible_id")
@@ -160,7 +165,6 @@ def has_supervision(user, project):
 
 
 def transition_context(user, project, definitions=None, rules=None, legacy=None, supervision=None, *, preview=False):
-    from .projects import eligible_project_workers
     from .statuses import configured_states
     rows = list(Task.objects.filter(project=project).values("id", "parent_id", "state_code", "archived", "responsible_id"))
     tasks = {row["id"]: row for row in rows}
@@ -170,17 +174,13 @@ def transition_context(user, project, definitions=None, rules=None, legacy=None,
     for predecessor, successor in TaskDependency.objects.filter(project=project).values_list("predecessor_id", "successor_id"):
         incoming[successor].append(predecessor)
         outgoing[predecessor].append(successor)
-    assignees = {row["id"]: {row["responsible_id"]} if row["responsible_id"] else set() for row in rows}
-    for task_id, worker_id in TaskAssignee.objects.filter(task__project=project).values_list("task_id", "worker_id"):
-        assignees[task_id].add(worker_id)
-    eligible = set(ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project)).values_list("worker_id", flat=True))
     blocked_deliverables = set()
     if preview and connection.vendor == "mysql":
         with connection.cursor() as cursor:
             cursor.execute("SELECT v.actividad_id FROM v_estado_entregable v JOIN actividad a ON a.id=v.actividad_id WHERE a.proyecto_id=%s AND v.obligatorio=1 AND v.estado_revision<>'APROBADO'", [project.pk])
             blocked_deliverables = {row[0] for row in cursor.fetchall()}
     return {
-        "tasks": tasks, "assignees": assignees, "eligible": eligible,
+        "tasks": tasks,
         "children": children, "incoming": incoming, "outgoing": outgoing,
         "states": {item["code"] for item in (definitions if definitions is not None else configured_states(project))},
         "rules": rules if rules is not None else definition_rules(project),
@@ -190,7 +190,7 @@ def transition_context(user, project, definitions=None, rules=None, legacy=None,
     }
 
 
-def validate_transition(user, project, task, target, reason, context=None):
+def validate_transition(user, project, task, target, reason, context=None, *, direct=False):
     editable_project(project)
     context = context or transition_context(user, project)
     if target not in context["states"]:
@@ -201,17 +201,17 @@ def validate_transition(user, project, task, target, reason, context=None):
     if project.state_code not in ("PLANIFICADO", "EN_CURSO") and target_rule != "CANCELADA":
         raise ValidationError({"detail": "El proyecto no permite ejecutar tareas en su estado actual"})
     transition = transition_policy(task.state_code, target, rules, context["legacy"])
+    if direct:
+        transition = {
+            "supervision_required": target_rule in ("COMPLETADA", "CANCELADA") or origin_rule in ("COMPLETADA", "CANCELADA") or bool(transition and transition["supervision_required"]),
+            "reason_required": False,
+        }
     if transition is None:
         raise ValidationError({"state_code": "La transición no está permitida"})
     if transition["supervision_required"] and not context["supervision"]:
         raise PermissionDenied("Esta transición requiere supervisión del proyecto")
     if transition["reason_required"] and not reason:
         raise ValidationError({"reason": "Indica el motivo del cambio"})
-    people = context["assignees"].get(task.pk, set())
-    if not people and target_rule in ("EN_CURSO", "EN_REVISION", "COMPLETADA"):
-        raise ValidationError({"responsible_ids": "Este estado requiere responsable activo del proyecto"})
-    if people - context["eligible"]:
-        raise ValidationError({"responsible_ids": "Cada responsable debe ser participante activo del proyecto"})
     tasks = context["tasks"]
     if target_rule not in ("COMPLETADA", "CANCELADA"):
         parent_id = task.parent_id
@@ -247,11 +247,11 @@ def validate_transition(user, project, task, target, reason, context=None):
         raise ValidationError({"state_code": "Hay entregables obligatorios sin aprobar en su última versión"})
 
 
-def apply_state_change(project, task, target, reason, nested=False, before=None):
+def apply_state_change(project, task, target, reason, nested=False, before=None, *, direct=False):
     if connection.vendor == "mysql":
-        procedure = "sp_aplicar_estado_actividad" if nested else "sp_cambiar_estado_actividad"
+        procedure = "sp_aplicar_estado_actividad_modo" if direct else "sp_aplicar_estado_actividad" if nested else "sp_cambiar_estado_actividad"
         with connection.cursor() as cursor:
-            cursor.callproc(procedure, [project.pk, task.pk, target, reason or None])
+            cursor.callproc(procedure, [project.pk, task.pk, target, reason or None] + ([True] if direct else []))
             while cursor.nextset():
                 pass
         task.refresh_from_db()

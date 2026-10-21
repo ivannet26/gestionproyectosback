@@ -53,9 +53,10 @@ def move_task(user, project_id, task_id, data):
         if data["expected_revision"] != revision:
             raise MoveConflict()
         destination = data["state_code"]
+        reason = ""
         changed = destination != task.state_code
         if changed:
-            validate_transition(user, project, task, destination, data["reason"])
+            validate_transition(user, project, task, destination, reason, direct=True)
         elif destination not in {item["code"] for item in configured_states(project)}:
             raise ValidationError({"state_code": "El estado no está habilitado"})
         ensure_positions(project)
@@ -83,7 +84,7 @@ def move_task(user, project_id, task_id, data):
                 upper = siblings[index].manual_order.position if index < len(siblings) else None
             position = (lower + upper) / 2 if lower is not None and upper is not None else upper - 1024 if upper is not None else (lower or Decimal(0)) + 1024
         if changed:
-            apply_state_change(project, task, destination, data["reason"], nested=True)
+            apply_state_change(project, task, destination, reason, nested=True, direct=True)
         TaskOrder.objects.filter(task=task).update(position=position)
         if old_position != position:
             record_activity(task, "changed", field="position", old=str(old_position), new=str(position))

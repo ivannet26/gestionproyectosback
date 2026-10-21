@@ -79,11 +79,16 @@ class StateTemplatesMySQLTests(unittest.TestCase):
         with patch.dict(os.environ, {"PROJECT_INTEGRATION_MAINTENANCE": "1"}):
             MigrationExecutor(connection).apply_migration(state, integration.Migration("0013_project_teams_specialties_order", "proyectos"))
         cls.tables += [ProjectTeam, TaskOrder]
+        direct = import_module("apps.projects.migrations.0014_task_direct_move")
+        state = MigrationLoader(None).project_state([("proyectos", "0013_project_teams_specialties_order")])
+        with patch.dict(os.environ, {"TASK_MOVE_MIGRATION_MAINTENANCE": "1"}):
+            MigrationExecutor(connection).apply_migration(state, direct.Migration("0014_task_direct_move", "proyectos"))
 
     @classmethod
     def tearDownClass(cls):
         with connection.cursor() as cursor:
             cursor.execute("DROP TRIGGER bu_actividad_estructura")
+            cursor.execute("DROP PROCEDURE sp_aplicar_estado_actividad_modo")
             for name in migration.ROUTINES + ("sp_aplicar_estado_actividad",):
                 cursor.execute(f"DROP PROCEDURE {name}")
             cursor.execute("DROP FUNCTION fn_regla_estado_actividad")
@@ -204,10 +209,13 @@ class StateTemplatesMySQLTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 migration.restore(apps, editor)
         TaskStatusTemplate.objects.all().delete()
-        with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1"}), connection.schema_editor() as editor:
+        direct = import_module("apps.projects.migrations.0014_task_direct_move")
+        with patch.dict(os.environ, {"TASK_STATUS_MIGRATION_MAINTENANCE": "1", "TASK_MOVE_MIGRATION_MAINTENANCE": "1"}), connection.schema_editor() as editor:
+            direct.restore(apps, editor)
             migration.restore(apps, editor)
             with connection.cursor() as cursor:
                 migration.review(cursor)
             migration.install(apps, editor)
-        with connection.cursor() as cursor:
-            migration.review(cursor, installed=True)
+            with connection.cursor() as cursor:
+                migration.review(cursor, installed=True)
+            direct.install(apps, editor)

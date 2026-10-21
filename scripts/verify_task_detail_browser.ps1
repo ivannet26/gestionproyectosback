@@ -1,4 +1,4 @@
-param([ValidateSet('verify-task-detail-browser.mjs', 'verify-project-integrations-browser.mjs')][string]$BrowserTest = 'verify-task-detail-browser.mjs')
+param([ValidateSet('verify-task-detail-browser.mjs', 'verify-project-integrations-browser.mjs', 'verify-list-refinements-browser.mjs')][string]$BrowserTest = 'verify-task-detail-browser.mjs')
 $ErrorActionPreference = 'Stop'
 $taskDetailRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $taskDetailFront = (Resolve-Path (Join-Path $taskDetailRoot '../frontend')).Path

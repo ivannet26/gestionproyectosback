@@ -96,12 +96,14 @@ def task_snapshots(tasks, project, user):
         by_id = {task.pk: task for task in tasks}
         for snapshot in snapshots:
             snapshot["move_targets"] = []
-            for transition in snapshot["transitions"]:
+            for target in states if snapshot["permissions"]["state"] else []:
+                if target == snapshot["state_code"]:
+                    continue
                 try:
-                    validate_transition(user, project, by_id[snapshot["id"]], transition["target"], "Validación de destino", context)
+                    validate_transition(user, project, by_id[snapshot["id"]], target, "", context, direct=True)
                 except (PermissionDenied, ValidationError):
                     continue
-                snapshot["move_targets"].append(transition["target"])
+                snapshot["move_targets"].append(target)
     return snapshots
 
 
