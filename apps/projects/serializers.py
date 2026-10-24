@@ -195,7 +195,5 @@ class ProjectTaskConfigurationSerializer(StrictSerializer):
         names = [state["name"].casefold() for state in states]
         if len(codes) != len(set(codes)) or len(names) != len(set(names)):
             raise serializers.ValidationError({"states": "No se permiten códigos ni nombres duplicados"})
-        sources = [item["source"] for item in attrs["reassignments"]]
-        if len(sources) != len(set(sources)):
-            raise serializers.ValidationError({"reassignments": "No se permiten orígenes duplicados"})
+        attrs.pop("reassignments", None)
         return attrs

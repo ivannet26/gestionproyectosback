@@ -4,17 +4,23 @@ import uuid
 
 from django.db import connection, transaction
 from django.db.models import Count
-from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from rest_framework.exceptions import APIException, ValidationError
 
 from ..models import ProjectTaskStatus, Task, TaskState, TaskStateDefinition, TaskTransition
 from .access import project_for_user, require_admin
-from .audit import audit_actor
+from .audit import audit_actor, record_activity
 from .state_categories import CATEGORIES, COLORS, LEGACY_CATEGORIES, LEGACY_COLORS
-from .state_categories import state_rule
 
 
 STANDARD_NAMES = {"PENDIENTE": "PENDIENTE", "EN_CURSO": "EN CURSO", "COMPLETADA": "CERRADO"}
 STANDARD_ORDER = {code: position for position, code in enumerate(STANDARD_NAMES)}
+CATEGORY_NAMES = dict(zip(CATEGORIES, ("No iniciado", "Activo", "Completado", "Cerrado")))
+
+
+class ConfigurationConflict(APIException):
+    status_code = 409
+    default_detail = {"revision": "La configuración cambió. Vuelve a cargarla antes de guardar"}
 
 
 def catalog_states():
@@ -27,11 +33,11 @@ def catalog_states():
 
 
 def configured_states(project):
-    return list(ProjectTaskStatus.objects.filter(project=project).values("code", "name", "category", "color")) or catalog_states()
+    return list(ProjectTaskStatus.objects.filter(project=project).order_by("position").values("code", "name", "category", "color")) or catalog_states()
 
 
 def status_configuration(project, user):
-    saved = list(ProjectTaskStatus.objects.filter(project=project).values("code", "name", "category", "color"))
+    saved = list(ProjectTaskStatus.objects.filter(project=project).order_by("position").values("code", "name", "category", "color"))
     catalog = catalog_states()
     states = saved or catalog
     template = "custom" if saved else "standard"
@@ -65,7 +71,7 @@ def validate_status_configuration(project, states):
         raise ValidationError({"states": "Conserva los estados intermedios de las transiciones vigentes"})
 
 
-def resolve_states(project, requested):
+def resolve_states(project, requested, validate=None):
     available = {state["code"]: state for state in configured_states(project) + catalog_states()}
     owned = set(TaskStateDefinition.objects.filter(project=project).values_list("code", flat=True))
     has_custom = False
@@ -95,6 +101,9 @@ def resolve_states(project, requested):
             has_custom = True
         resolved.append({"code": actual, "name": item["name"], "category": category,
                          "color": item.get("color", existing["color"] if existing else COLORS[category])})
+    resolved = [state for category in CATEGORIES for state in resolved if state["category"] == category]
+    if validate is not None:
+        validate(resolved)
     categories = {item["category"] for item in resolved}
     if not {"not_started", "active", "closed"} <= categories:
         raise ValidationError({"states": "El flujo necesita al menos un estado No iniciado, Activo y Cerrado"})
@@ -105,48 +114,38 @@ def resolve_states(project, requested):
     return resolved, identities
 
 
-def reassign_tasks(user, project, removed, identities, assignments, previous_states=None):
-    from .tasks import apply_state_change, validate_transition
-    from .activity import activity_values, record_state_change
+def category_mapping(previous, states, usage):
+    old = {state["code"]: state for state in previous}
+    current = {state["code"]: state for state in states}
+    if set(usage) - old.keys():
+        raise ValidationError({"states": "Hay tareas con estados fuera de la configuración vigente. Revisa el flujo antes de aplicar"})
+    mapping, errors = {}, {}
+    for category in CATEGORIES:
+        origins = [state for state in previous if state["category"] == category]
+        targets = [state for state in states if state["category"] == category]
+        for position, origin in enumerate(origins):
+            code = origin["code"]
+            if code in current and current[code]["category"] == category:
+                mapping[code] = code
+            elif targets:
+                mapping[code] = targets[min(position, len(targets) - 1)]["code"]
+            elif usage.get(code, 0):
+                errors[category] = f"Añade un estado en {CATEGORY_NAMES[category]} para conservar las tareas de esta categoría"
+    if errors:
+        raise ValidationError({"categories": errors})
+    return mapping
 
-    destinations = {item["source"]: item for item in assignments}
-    used = set(Task.objects.filter(project=project, state_code__in=removed).values_list("state_code", flat=True))
-    if used - destinations.keys():
-        raise ValidationError({"reassignments": "Elige un destino para cada estado con tareas o subtareas"})
-    for source, item in destinations.items():
-        if source not in removed or item["target"] not in identities:
-            raise ValidationError({"reassignments": "Selecciona orígenes retirados y destinos del nuevo flujo"})
-    pending = {task.pk: task for task in Task.objects.filter(project=project, state_code__in=removed)}
-    while pending:
-        previous_count = len(pending)
-        failure = None
-        for task in list(pending.values()):
-            item = destinations[task.state_code]
-            target = identities[item["target"]]
-            try:
-                with transaction.atomic():
-                    task.refresh_from_db()
-                    if task.archived:
-                        if state_rule(project, task.state_code) != state_rule(project, target):
-                            raise ValidationError({"reassignments": "Para tareas archivadas elige un destino de la misma fase funcional"})
-                        before = activity_values(task)
-                        if previous_states:
-                            before["state_code"] = next((state for state in previous_states if state["code"] == task.state_code), before["state_code"])
-                        task.state_code = target
-                        task.save(update_fields=["state_code"])
-                        record_state_change(task, before)
-                    else:
-                        validate_transition(user, project, task, target, item["reason"])
-                        before = activity_values(task)
-                        if previous_states:
-                            before["state_code"] = next((state for state in previous_states if state["code"] == task.state_code), before["state_code"])
-                        apply_state_change(project, task, target, item["reason"], nested=True, before=before)
-            except ValidationError as error:
-                failure = error
-            else:
-                del pending[task.pk]
-        if len(pending) == previous_count:
-            raise failure
+
+def reassign_tasks(project, previous, states, mapping):
+    old, current = {state["code"]: state for state in previous}, {state["code"]: state for state in states}
+    for source, target in sorted(mapping.items(), key=lambda item: item[0] != item[1]):
+        if old[source] == current[target]:
+            continue
+        tasks = Task.objects.filter(project=project, state_code=source)
+        ids = list(tasks.values_list("pk", flat=True)) if connection.vendor != "mysql" or source == target else []
+        tasks.update(state_code=target, updated_at=timezone.now())
+        for task_id in ids:
+            record_activity(Task(pk=task_id, project_id=project.pk), "changed", field="state_code", old=old[source], new=current[target])
 
 
 def configure_task_states(user, project_id, data):
@@ -157,18 +156,26 @@ def configure_task_states(user, project_id, data):
             raise ValidationError({"detail": "No se puede configurar un proyecto cerrado"})
         previous = status_configuration(project, user)
         if data["revision"] != previous["revision"]:
-            raise ValidationError({"revision": "La configuración cambió. Vuelve a cargarla antes de guardar"})
+            raise ConfigurationConflict()
         requested = data["states"] if data["template"] == "custom" else catalog_states()
+        mapping = {}
+
+        def validate(states):
+            mapping.update(category_mapping(previous["states"], states, previous["usage"]))
+
         if connection.vendor == "mysql":
             with connection.cursor() as cursor:
                 cursor.execute("SET @gm_estados_anteriores = %s", [json.dumps({state["code"]: state for state in previous["states"]})])
-        states, identities = resolve_states(project, requested)
-        removed = ({state["code"] for state in previous["states"]} | set(previous["usage"])) - set(identities.values())
+        states, _ = resolve_states(project, requested, validate)
         ProjectTaskStatus.objects.filter(project=project).delete()
         ProjectTaskStatus.objects.bulk_create([
             ProjectTaskStatus(project=project, position=position, **state) for position, state in enumerate(states)
         ])
-        reassign_tasks(user, project, removed, identities, data.get("reassignments", []), previous["states"])
+        reassign_tasks(project, previous["states"], states, mapping)
         if data["template"] == "standard":
             ProjectTaskStatus.objects.filter(project=project).delete()
-        return status_configuration(project, user)
+        from .access import tasks_for_user
+        from .presentation import task_snapshots
+        result = status_configuration(project, user)
+        result["tasks"] = task_snapshots(tasks_for_user(user, project).select_related("responsible"), project, user)
+        return result

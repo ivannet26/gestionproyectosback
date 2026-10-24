@@ -2,9 +2,9 @@ from collections import defaultdict
 from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel, TaskTransition
+from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel
 from .statuses import configured_states
-from .state_categories import definition_rules, transition_policy
+from .state_categories import definition_rules
 
 
 def task_snapshots(tasks, project, user):
@@ -37,20 +37,12 @@ def task_snapshots(tasks, project, user):
     states = {state["code"]: state["name"] for state in definitions}
     metadata = {state["code"]: state for state in definitions}
     rules = definition_rules(project)
-    sources = {task.state_code for task in tasks}
-    transitions = TaskTransition.objects.filter(
-        source__in=sources | {rules[code] for code in sources if code in rules},
-        target__in=set(states) | set(rules.values()),
-    )
-    legacy = {(item["source"], item["target"]): item for item in transitions.values(
-        "source", "target", "reason_required", "supervision_required",
-    )}
+    legacy = {}
     transitions_by_state = defaultdict(list)
     for source in {task.state_code for task in tasks}:
         for target in states:
-            policy = transition_policy(source, target, rules, legacy)
-            if policy and (supervision or not policy["supervision_required"]):
-                transitions_by_state[source].append({"target": target, "reason_required": policy["reason_required"]})
+            if source != target:
+                transitions_by_state[source].append({"target": target, "reason_required": False})
     labels = defaultdict(list)
     assignees = defaultdict(dict)
     for task in tasks:
@@ -125,6 +117,7 @@ def task_snapshot_from_context(
         "state_color": metadata.get("color"),
         "priority": task.priority,
         "created_at": task.created_at,
+        "updated_at": task.updated_at,
         "start_date": task.start_date,
         "due_date": task.due_date,
         "estimated_minutes": task.estimated_minutes,

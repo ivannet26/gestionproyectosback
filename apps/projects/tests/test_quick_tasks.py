@@ -63,11 +63,19 @@ class QuickTaskTests(unittest.TestCase):
         for data in ({"name": " "}, {"priority": 0}, {"priority": 5}, {"due_date": ""}, {"due_date": "bad"},
                      {"due_date": str(self.fixture.today - timedelta(days=1))}, {"due_date": str(self.fixture.today + timedelta(days=45))},
                      {"responsible_ids": [self.fixture.outsider.worker_id]}, {"labels": [{"name": "", "kind": "technical"}]},
-                     {"state_code": "EN_CURSO"}, {"state_code": "BLOQUEADA"}):
+                     {"state_code": "NOT_A_STATE"}):
             with self.subTest(data=data):
                 response = self.fixture.request("post", f"{project.pk}/tasks/", {"name": "Tarea", "state_code": "PENDIENTE", **data}, self.fixture.admin)
                 self.assertEqual(response.status_code, 400, response.content)
                 self.assertFalse(Task.objects.exists())
+
+    def test_enabled_states_allow_creation_without_responsible_or_reason(self):
+        project = self.fixture.assigned_project()
+        for state in ("EN_CURSO", "BLOQUEADA"):
+            response = self.fixture.request("post", f"{project.pk}/tasks/", {"name": "Tarea", "state_code": state}, self.fixture.admin)
+            self.assertEqual(response.status_code, 201, response.content)
+            self.assertEqual(response.json()["state_code"], state)
+            self.assertIsNone(response.json()["responsible_id"])
 
     def test_worker_ownership_and_revoked_permissions_are_unchanged(self):
         project = self.fixture.assigned_project(worker_contribute=True)
