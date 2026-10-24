@@ -28,6 +28,7 @@ class ListConsistencyTests(unittest.TestCase):
         parent = self.task(project)
         child = self.task(project, parent_id=parent.pk)
         for task in (parent, child):
+            Task.objects.filter(pk=task.pk).update(reason="Motivo histórico conservado")
             original = self.snapshot(project, task)
             for operation in (self.move, self.manual, self.move, self.manual):
                 for state in ("EN_CURSO", "PENDIENTE"):
@@ -37,6 +38,7 @@ class ListConsistencyTests(unittest.TestCase):
                     saved = self.snapshot(project, task)
                     task.refresh_from_db()
                     self.assertEqual(saved["state_code"], task.state_code)
+                    self.assertEqual(task.reason, "Motivo histórico conservado")
                     expected = next(item for item in self.request("get", f"{project.pk}/task-states/", user=self.admin).json()["states"] if item["code"] == state)
                     for field in ("name", "category", "color"):
                         self.assertEqual(saved[f"state_{field}"], expected[field])

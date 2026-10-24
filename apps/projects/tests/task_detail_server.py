@@ -68,11 +68,14 @@ def serve():
     scrum_parent = fixture.task(scrum, name="Sprint sintético", state_code=states[0]["code"], due_date=None)
     scrum_child = fixture.task(scrum, parent_id=scrum_parent.pk, name="COMPLETADO aún activo", state_code=states[3]["code"], responsible_id=fixture.worker.worker_id, due_date=None)
     credentials = {}
+    from apps.authentication.tokens import issue_stored
+
     for user, role in ((fixture.admin, "admin"), (fixture.worker, "worker"), (fixture.outsider, "outsider")):
         password = secrets.token_urlsafe(24)
         user.set_password(password)
         user.save(update_fields=["password"])
         credentials[role] = {"email": user.worker.email, "password": password}
+        credentials[role]["expired_access"] = issue_stored(user, "access", timezone.now() - timedelta(seconds=30))
     credentials["context"] = {"project": project.pk, "task": parent.pk, "child": child.pk, "related": related.pk,
                               "reason_task": reason_task.pk,
                               "readonly": readonly.pk, "readonly_task": readonly_task.pk, "scrum": scrum.pk,

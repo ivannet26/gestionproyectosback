@@ -9,8 +9,8 @@ from .access import project_for_user, require_admin, require_task_creation, requ
 from .audit import audit_actor, record_activity
 from .activity import activity_values, record_changes, record_state_change
 from .statuses import require_configured_state
-from .state_categories import definition_rules, state_rule, transition_policy
-from .assignees import primary_assignee, requested_assignees, save_assignees, task_assignee_ids, validate_assignees
+from .state_categories import definition_rules, state_rule
+from .assignees import primary_assignee, requested_assignees, save_assignees, validate_assignees
 
 
 def editable_project(project):
@@ -80,7 +80,6 @@ def create_task(user, project_id, data):
                 )
             assignee_ids = [user.worker_id]
         require_configured_state(project, data["state_code"])
-        pass
         parent = None
         if data["parent_id"]:
             parent = Task.objects.filter(project=project, pk=data["parent_id"], archived=False).first()
@@ -203,13 +202,12 @@ def apply_state_change(project, task, target, reason, nested=False, before=None,
     origin = rules.get(task.state_code, task.state_code)
     destination = rules.get(target, target)
     task.state_code = target
-    task.reason = reason or None
     if destination == "COMPLETADA":
         task.progress = 100
     elif destination in ("PENDIENTE", "CANCELADA") or origin in ("COMPLETADA", "CANCELADA"):
         task.progress = 0
     task.updated_at = timezone.now()
-    task.save(update_fields=["state_code", "reason", "progress", "updated_at"])
+    task.save(update_fields=["state_code", "progress", "updated_at"])
     record_state_change(task, before)
 
 
