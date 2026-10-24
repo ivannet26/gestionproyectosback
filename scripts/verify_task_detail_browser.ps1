@@ -1,4 +1,4 @@
-param([ValidateSet('verify-task-detail-browser.mjs', 'verify-project-integrations-browser.mjs', 'verify-list-refinements-browser.mjs', 'verify-list-consistency-browser.mjs', 'verify-template-application-browser.mjs', 'verify-integration-browser.mjs')][string]$BrowserTest = 'verify-task-detail-browser.mjs')
+param([ValidateSet('verify-task-detail-browser.mjs', 'verify-project-integrations-browser.mjs', 'verify-list-refinements-browser.mjs', 'verify-list-consistency-browser.mjs', 'verify-template-application-browser.mjs', 'verify-integration-browser.mjs', 'verify-auth-routing-browser.mjs')][string]$BrowserTest = 'verify-task-detail-browser.mjs')
 $ErrorActionPreference = 'Stop'
 $taskDetailRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $taskDetailFront = (Resolve-Path (Join-Path $taskDetailRoot '../frontend')).Path
@@ -8,7 +8,7 @@ $taskDetailContainer = $null
 $taskDetailServer = $null
 $taskDetailVite = $null
 $taskDetailSaved = @{}
-foreach ($taskDetailKey in @('MYSQL_ROOT_PASSWORD','MYSQL_PWD','GM_TEST_MYSQL_PASSWORD','GM_TEST_MYSQL_PORT','DJANGO_SETTINGS_MODULE','FRONTEND_ORIGIN','VITE_API_BASE_URL','GM_TASK_DETAIL_BROWSER','GM_QA_SECRETS_PATH','GM_BROWSER_REPORT_DIR')) {
+foreach ($taskDetailKey in @('MYSQL_ROOT_PASSWORD','MYSQL_PWD','GM_TEST_MYSQL_PASSWORD','GM_TEST_MYSQL_PORT','DJANGO_SETTINGS_MODULE','FRONTEND_ORIGIN','VITE_API_BASE_URL','API_PROXY_TARGET','GM_TASK_DETAIL_BROWSER','GM_QA_SECRETS_PATH','GM_BROWSER_REPORT_DIR')) {
     $taskDetailSaved[$taskDetailKey] = [Environment]::GetEnvironmentVariable($taskDetailKey, 'Process')
 }
 try {
@@ -38,6 +38,10 @@ try {
     $env:DJANGO_SETTINGS_MODULE = 'config.settings_test_mysql_templates'
     $env:FRONTEND_ORIGIN = 'http://localhost:5189'
     $env:VITE_API_BASE_URL = 'http://localhost:8819'
+    if ($BrowserTest -eq 'verify-auth-routing-browser.mjs') {
+        $env:VITE_API_BASE_URL = ''
+        $env:API_PROXY_TARGET = 'http://127.0.0.1:8819'
+    }
     $env:GM_TASK_DETAIL_BROWSER = '1'
     $env:GM_QA_SECRETS_PATH = Join-Path $taskDetailTemp 'credentials.json'
     $env:GM_BROWSER_REPORT_DIR = $taskDetailOutput
