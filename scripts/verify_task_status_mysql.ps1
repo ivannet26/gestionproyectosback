@@ -1,4 +1,4 @@
-param([ValidateSet('apps.projects.tests.test_state_templates_mysql', 'apps.projects.tests.test_quick_tasks_mysql', 'apps.projects.tests.test_task_detail_mysql', 'apps.projects.tests.test_project_integrations_mysql')][string]$TestModule = 'apps.projects.tests.test_state_templates_mysql')
+param([ValidateSet('apps.projects.tests.test_state_templates_mysql', 'apps.projects.tests.test_quick_tasks_mysql', 'apps.projects.tests.test_task_detail_mysql', 'apps.projects.tests.test_project_integrations_mysql', 'apps.projects.tests.test_list_consistency_mysql', 'apps.projects.tests.test_template_application_mysql', 'apps.projects.tests.test_state_policy_integration_mysql')][string]$TestModule = 'apps.projects.tests.test_state_templates_mysql')
 $ErrorActionPreference = 'Stop'
 $taskStatusContainer = $null
 $taskStatusRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

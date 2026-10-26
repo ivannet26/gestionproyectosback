@@ -263,11 +263,11 @@ class PerformanceRegressionTests(unittest.TestCase):
         self.assertEqual(admin[1]["dependencies"], [first.pk, hidden.pk])
         self.assertEqual(worker[1]["dependencies"], [first.pk])
         self.assertEqual(worker[0]["state_name"], "Configurado PENDIENTE")
-        self.assertIn({"target": "CANCELADA", "reason_required": True}, worker[0]["transitions"])
+        self.assertIn({"target": "CANCELADA", "reason_required": False}, worker[0]["transitions"])
         member.project_role = "PARTICIPANTE"
         member.save(update_fields=["project_role"])
-        self.assertNotIn(
-            {"target": "CANCELADA", "reason_required": True}, self.get(path, "worker")[0].json()[0]["transitions"]
+        self.assertIn(
+            {"target": "CANCELADA", "reason_required": False}, self.get(path, "worker")[0].json()[0]["transitions"]
         )
         project.state_code = "FINALIZADO"
         project.save(update_fields=["state_code"])

@@ -120,7 +120,7 @@ class StateTemplatesMySQLTests(unittest.TestCase):
     test_presets = template_tests.StateTemplateTests.test_exact_presets_empty_done_and_scrum_active_completed
     test_template_persistence = template_tests.StateTemplateTests.test_template_save_update_copy_persistence_without_applying
     test_template_scope = template_tests.StateTemplateTests.test_template_validation_authentication_scope_and_preset_immutability
-    test_explicit_mapping = template_tests.StateTemplateTests.test_used_state_requires_explicit_mapping_and_keeps_subtasks_assignments
+    test_automatic_mapping = template_tests.StateTemplateTests.test_used_state_maps_automatically_and_keeps_subtasks_assignments
     test_identity = template_tests.StateTemplateTests.test_identity_category_color_and_empty_states_survive_edits
     test_scrum = template_tests.StateTemplateTests.test_scrum_completed_is_active_and_completion_preserves_supervision
     test_foreign_state = template_tests.StateTemplateTests.test_foreign_custom_codes_cannot_be_applied_or_created

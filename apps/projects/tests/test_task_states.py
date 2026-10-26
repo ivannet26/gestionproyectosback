@@ -136,13 +136,15 @@ class TaskStateFlowTests(unittest.TestCase):
         other = self.project()
         task = self.task(project, responsible_id=self.worker.worker_id)
         states = self.configuration(project)["states"]
+        categories = {state["code"]: state["category"] for state in states}
         states = [
             {"code": state["code"], "name": "Por iniciar" if state["code"] == "PENDIENTE" else state["name"]}
             for state in reversed(states)
         ]
         response = self.configure(project, states)
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual([{key: state[key] for key in ("code", "name")} for state in self.configuration(project)["states"]], states)
+        expected = [state for category in ("not_started", "active", "done", "closed") for state in states if categories[state["code"]] == category]
+        self.assertEqual([{key: state[key] for key in ("code", "name")} for state in self.configuration(project)["states"]], expected)
         self.assertEqual(self.configuration(other)["template"], "standard")
         task.refresh_from_db()
         self.assertEqual(task.state_code, "PENDIENTE")
@@ -164,18 +166,19 @@ class TaskStateFlowTests(unittest.TestCase):
                 self.assertEqual(self.configure(project, invalid).status_code, 400)
                 self.assertFalse(ProjectTaskStatus.objects.exists())
 
-    def test_used_archived_subtask_state_and_review_bridge_cannot_be_removed(self):
+    def test_archived_subtask_is_mapped_and_review_bridge_stays_required(self):
         project = self.project()
         parent = self.task(project)
         child = self.task(project, parent_id=parent.pk, state_code="OBSERVADA")
         child.archived = True
         child.save(update_fields=["archived"])
-        for code in ("OBSERVADA", "EN_REVISION"):
-            states = [state for state in self.configuration(project)["states"] if state["code"] != code]
-            self.assertEqual(self.configure(project, states).status_code, 400)
+        states = [state for state in self.configuration(project)["states"] if state["code"] != "OBSERVADA"]
+        self.assertEqual(self.configure(project, states).status_code, 200)
         child.refresh_from_db()
-        self.assertEqual(child.state_code, "OBSERVADA")
-        self.assertFalse(ProjectTaskStatus.objects.exists())
+        self.assertEqual(child.state_code, "EN_REVISION")
+        self.assertTrue(child.archived)
+        states = [state for state in self.configuration(project)["states"] if state["code"] != "EN_REVISION"]
+        self.assertEqual(self.configure(project, states).status_code, 400)
 
     def test_unused_state_removal_is_enforced_on_creation_and_transition(self):
         project = self.assigned_project(worker_state=True)
@@ -204,7 +207,7 @@ class TaskStateFlowTests(unittest.TestCase):
         ]
         self.assertEqual(self.configure(project, states).status_code, 200)
         saved = self.configuration(project)
-        self.assertEqual(self.configure(project, before["states"], revision=before["revision"]).status_code, 400)
+        self.assertEqual(self.configure(project, before["states"], revision=before["revision"]).status_code, 409)
         with patch(
             "apps.projects.services.statuses.ProjectTaskStatus.objects.bulk_create",
             side_effect=IntegrityError("synthetic"),

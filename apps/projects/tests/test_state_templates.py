@@ -93,16 +93,12 @@ class StateTemplateTests(unittest.TestCase):
         self.assertEqual(self.request("post", path, {"name": "Prohibida", "states": []}, self.worker).status_code, 403)
         self.assertEqual(self.request("put", f"{path}normal/", {"name": "No", "states": []}, self.admin).status_code, 404)
 
-    def test_used_state_requires_explicit_mapping_and_keeps_subtasks_assignments(self):
+    def test_used_state_maps_automatically_and_keeps_subtasks_assignments(self):
         project = self.assigned_project()
         parent = self.task(project, responsible_id=self.worker.worker_id)
         child = self.task(project, parent_id=parent.pk, responsible_id=self.worker.worker_id)
         states = self.preset(project)
-        before = self.configuration(project)
-        self.assertEqual(self.apply(project, states).status_code, 400)
-        self.assertEqual(self.configuration(project), before)
-        self.assertFalse(TaskStateDefinition.objects.exists())
-        response = self.apply(project, states, [{"source": "PENDIENTE", "target": "draft_0", "reason": ""}])
+        response = self.apply(project, states)
         self.assertEqual(response.status_code, 200, response.content)
         parent.refresh_from_db(); child.refresh_from_db()
         self.assertEqual(parent.state_code, child.state_code)
@@ -116,8 +112,8 @@ class StateTemplateTests(unittest.TestCase):
         task = self.task(project, responsible_id=self.worker.worker_id)
         before = self.configuration(project)
         codes = list(TaskState.objects.values_list("code", flat=True))
-        with patch("apps.projects.services.tasks.apply_state_change", side_effect=IntegrityError("synthetic")):
-            response = self.apply(project, self.preset(project), [{"source": "PENDIENTE", "target": "draft_0", "reason": ""}])
+        with patch("apps.projects.services.statuses.reassign_tasks", side_effect=IntegrityError("synthetic")):
+            response = self.apply(project, self.preset(project))
         self.assertEqual(response.status_code, 409)
         self.assertEqual(self.configuration(project), before)
         self.assertEqual(list(TaskState.objects.values_list("code", flat=True)), codes)
