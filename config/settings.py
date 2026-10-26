@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "apps.authentication.apps.AuthenticationConfig",
     "apps.projects.apps.ProjectsConfig",
+    "apps.publications.apps.PublicationsConfig",
 ]
 
 MIDDLEWARE = [
