@@ -4,11 +4,9 @@ from rest_framework.views import APIView
 
 from .serializers import (
     PublicationCreateSerializer,
-    PublicationStateSerializer,
     PublicationUpdateSerializer,
 )
 from .services import (
-    change_publication_state,
     create_publication,
     list_publications,
     publication_catalog,
@@ -67,18 +65,6 @@ class PublicationDetailView(PublicationApiView):
         serializer = PublicationUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         publication = update_publication(request.user, publication_id, serializer.validated_data)
-        return Response(publication_snapshot(publication, request.user))
-
-
-class PublicationStateView(PublicationApiView):
-    serializer_class = PublicationStateSerializer
-
-    def post(self, request, publication_id):
-        serializer = PublicationStateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        publication = change_publication_state(
-            request.user, publication_id, serializer.validated_data["state"]
-        )
         return Response(publication_snapshot(publication, request.user))
 
 

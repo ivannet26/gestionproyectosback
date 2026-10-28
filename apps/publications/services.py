@@ -150,7 +150,12 @@ def create_publication(user, data):
     require_admin(user)
     requirements = data["requirements"]
     _validate_requirements(requirements)
-    _validate_dates(data["opening_date"], data["closing_date"])
+    opening_date = data["opening_date"]
+    closing_date = data["closing_date"]
+    _validate_dates(opening_date, closing_date)
+    state = data.get("state", PublicationState.DRAFT)
+    if state not in TRANSITIONS.get(PublicationState.DRAFT, set()) and state != PublicationState.DRAFT:
+        raise ValidationError({"state": "Estado no válido para una publicación nueva"})
     with audit_actor(user), transaction.atomic():
         project = _project_for_management(data["project_id"], lock=True)
         publication = ProjectPublication.objects.create(
@@ -159,10 +164,18 @@ def create_publication(user, data):
             description=data["description"],
             vacancies=data["vacancies"],
             weekly_hours=data["weekly_hours"],
-            opening_date=data["opening_date"],
-            closing_date=data["closing_date"],
+            opening_date=opening_date,
+            closing_date=closing_date,
             state=PublicationState.DRAFT,
         )
+        if state != PublicationState.DRAFT:
+            publication.state = state
+            if state == PublicationState.OPEN:
+                _project_for_management(project.pk, lock=True)
+                _validate_dates(opening_date, closing_date, must_be_current=True)
+                if publication.vacancies < 1:
+                    raise ValidationError({"state": "No quedan vacantes disponibles"})
+            publication.save(update_fields=["state"])
         _replace_requirements(publication, requirements)
     return _reload(publication.pk)
 
@@ -189,30 +202,22 @@ def update_publication(user, publication_id, data):
         requirements = data.get("requirements")
         if requirements is not None:
             _validate_requirements(requirements)
+        new_state = data.get("state")
+        if new_state is not None and new_state != publication.state:
+            if new_state not in TRANSITIONS.get(publication.state, set()):
+                raise ValidationError({"state": f"No se puede pasar de {publication.state} a {new_state}"})
+            if new_state == PublicationState.OPEN:
+                _project_for_management(publication.project_id, lock=True)
+                _validate_dates(opening_date, closing_date, must_be_current=True)
+                if _occupied_count(publication) >= vacancies:
+                    raise ValidationError({"state": "No quedan vacantes disponibles"})
+            publication.state = new_state
         for field, value in data.items():
-            if field != "requirements":
+            if field not in ("requirements", "state"):
                 setattr(publication, field, value)
         publication.save()
         if requirements is not None:
             _replace_requirements(publication, requirements)
-    return _reload(publication.pk)
-
-
-def change_publication_state(user, publication_id, state):
-    require_admin(user)
-    with audit_actor(user), transaction.atomic():
-        publication = _managed_publication(user, publication_id, lock=True)
-        if state == publication.state:
-            raise ValidationError({"state": "La publicación ya está en ese estado"})
-        if state not in TRANSITIONS.get(publication.state, set()):
-            raise ValidationError({"state": f"No se puede pasar de {publication.state} a {state}"})
-        if state == PublicationState.OPEN:
-            _project_for_management(publication.project_id)
-            _validate_dates(publication.opening_date, publication.closing_date, must_be_current=True)
-            if _occupied_count(publication) >= publication.vacancies:
-                raise ValidationError({"state": "No quedan vacantes disponibles"})
-        publication.state = state
-        publication.save(update_fields=["state"])
     return _reload(publication.pk)
 
 

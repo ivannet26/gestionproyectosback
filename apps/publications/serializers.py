@@ -31,6 +31,7 @@ class PublicationCreateSerializer(StrictSerializer):
     )
     opening_date = serializers.DateField()
     closing_date = serializers.DateField()
+    state = serializers.ChoiceField(choices=PublicationState.choices, required=False)
     requirements = PublicationRequirementSerializer(many=True, default=list, max_length=50)
 
     def validate(self, attrs):
@@ -51,6 +52,7 @@ class PublicationUpdateSerializer(StrictSerializer):
     )
     opening_date = serializers.DateField(required=False)
     closing_date = serializers.DateField(required=False)
+    state = serializers.ChoiceField(choices=PublicationState.choices, required=False)
     requirements = PublicationRequirementSerializer(many=True, required=False, max_length=50)
 
     def validate(self, attrs):
@@ -61,5 +63,4 @@ class PublicationUpdateSerializer(StrictSerializer):
         return attrs
 
 
-class PublicationStateSerializer(StrictSerializer):
-    state = serializers.ChoiceField(choices=PublicationState.choices)
+
