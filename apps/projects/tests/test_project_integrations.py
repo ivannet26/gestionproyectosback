@@ -1,4 +1,5 @@
 from datetime import timedelta
+from uuid import uuid4
 import unittest
 from unittest.mock import patch
 
@@ -211,9 +212,9 @@ class ProjectIntegrationTests(unittest.TestCase):
         self.assertEqual(self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"priority": 2}, self.admin).status_code, 200)
         task.refresh_from_db()
         self.assertEqual(task.start_date, self.today - timedelta(days=10))
-        response = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"due_date": str(self.today - timedelta(days=1))}, self.admin)
+        response = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"due_date": str(self.today - timedelta(days=1)), "expected_calendar_revision": self.snapshot(project, task)["calendar_revision"], "calendar_intent_id": str(uuid4())}, self.admin)
         self.assertEqual(response.status_code, 200, response.content)
-        invalid = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"start_date": str(self.today - timedelta(days=21))}, self.admin)
+        invalid = self.request("patch", f"{project.pk}/tasks/{task.pk}/", {"start_date": str(self.today - timedelta(days=21)), "expected_calendar_revision": self.snapshot(project, task)["calendar_revision"], "calendar_intent_id": str(uuid4())}, self.admin)
         self.assertEqual(invalid.status_code, 400)
 
     def test_manual_and_direct_move_reach_enabled_nonsequential_states_without_reason(self):

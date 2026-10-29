@@ -18,7 +18,7 @@ from apps.workers.services.areas import area_summary
 
 from .mail import DeliveryError, send_link
 from .models import AuthToken, RecoveryRequest, User
-from .security import IsAdministrator, check_throttle, clear_throttle, record_failure
+from .security import IsAdministrator, check_throttle, clear_throttle, record_failure, role_annotation
 from .serializers import (
     AccountListQuerySerializer,
     EmailSerializer,
@@ -99,7 +99,7 @@ class LoginView(APIView):
             try:
                 user = (
                     User.objects.select_related("worker")
-                    .prefetch_related("userrole_set")
+                    .annotate(_role_code=role_annotation())
                     .select_for_update()
                     .get(worker__email__iexact=email)
                 )
@@ -128,7 +128,7 @@ def refresh_view(request):
         with transaction.atomic():
             user = (
                 User.objects.select_related("worker")
-                .prefetch_related("userrole_set")
+                .annotate(_role_code=role_annotation())
                 .select_for_update()
                 .get(pk=int(claims["sub"]))
             )

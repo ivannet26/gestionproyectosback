@@ -36,15 +36,15 @@ def configured_states(project):
     return list(ProjectTaskStatus.objects.filter(project=project).order_by("position").values("code", "name", "category", "color")) or catalog_states()
 
 
-def status_configuration(project, user):
+def status_configuration(project, user, *, full=True):
     saved = list(ProjectTaskStatus.objects.filter(project=project).order_by("position").values("code", "name", "category", "color"))
-    catalog = catalog_states()
+    catalog = catalog_states() if full or not saved else []
     states = saved or catalog
     template = "custom" if saved else "standard"
     revision = hashlib.sha256(json.dumps([template, states], sort_keys=True, ensure_ascii=True).encode()).hexdigest()
     admin = user.global_role == "ADMINISTRADOR"
     usage = dict(Task.objects.filter(project=project).values("state_code").annotate(total=Count("id"))
-                 .values_list("state_code", "total")) if admin else {}
+                 .values_list("state_code", "total")) if full and admin else {}
     return {"template": template, "states": states, "available_states": catalog, "revision": revision,
             "usage": usage, "can_configure": admin and project.state_code not in ("FINALIZADO", "CANCELADO")}
 

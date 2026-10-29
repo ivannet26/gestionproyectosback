@@ -1,8 +1,10 @@
-$BrowserTest = 'verify-calendar-browser.mjs'
+param([ValidateSet('verify-calendar-browser.mjs', 'verify-remote-integration-browser.mjs')][string]$BrowserTest = 'verify-calendar-browser.mjs')
 $ErrorActionPreference = 'Stop'
 $taskDetailRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $taskDetailFront = (Resolve-Path (Join-Path $taskDetailRoot '../frontend')).Path
 $taskDetailOutput = Join-Path $taskDetailRoot 'docs/reviews/evidencias_calendario_etapa3_20261029/navegador'
+if ($BrowserTest -eq 'verify-remote-integration-browser.mjs') { $taskDetailOutput = Join-Path $taskDetailRoot 'docs/reviews/evidencias_integracion_remota_20261029/navegador' }
+$taskDetailFixture = if ($BrowserTest -eq 'verify-remote-integration-browser.mjs') { 'apps.projects.tests.remote_integration_browser_server' } else { 'apps.projects.tests.calendar_browser_server' }
 $taskDetailTemp = Join-Path ([IO.Path]::GetTempPath()) ('gm-calendar-' + [Guid]::NewGuid().ToString('N'))
 $taskDetailContainer = $null
 $taskDetailServer = $null
@@ -49,7 +51,7 @@ try {
     if ($BrowserTest -eq 'verify-list-presentation-browser.mjs') { $env:GM_TASK_LIST_BROWSER = '1' }
     $env:GM_QA_SECRETS_PATH = Join-Path $taskDetailTemp 'credentials.json'
     $env:GM_BROWSER_REPORT_DIR = $taskDetailOutput
-    $taskDetailServer = Start-Process -FilePath (Join-Path $taskDetailRoot '.venv/Scripts/python.exe') -ArgumentList '-m apps.projects.tests.calendar_browser_server' -WorkingDirectory $taskDetailRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskDetailTemp 'server.log') -RedirectStandardError (Join-Path $taskDetailTemp 'server-errors.log')
+    $taskDetailServer = Start-Process -FilePath (Join-Path $taskDetailRoot '.venv/Scripts/python.exe') -ArgumentList "-m $taskDetailFixture" -WorkingDirectory $taskDetailRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskDetailTemp 'server.log') -RedirectStandardError (Join-Path $taskDetailTemp 'server-errors.log')
     $taskDetailVite = Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList 'node_modules/vite/bin/vite.js --host localhost --port 5189 --strictPort' -WorkingDirectory $taskDetailFront -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $taskDetailTemp 'vite.log') -RedirectStandardError (Join-Path $taskDetailTemp 'vite-errors.log')
     for ($taskDetailAttempt = 0; $taskDetailAttempt -lt 90 -and -not (Test-Path -LiteralPath $env:GM_QA_SECRETS_PATH); $taskDetailAttempt++) {
         if ($taskDetailServer.HasExited) { Get-Content -LiteralPath (Join-Path $taskDetailTemp 'server-errors.log'); throw 'Falló la preparación sintética.' }

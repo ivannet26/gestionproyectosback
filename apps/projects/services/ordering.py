@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from django.db import transaction
-from django.db.models import Max
+from django.db.models import F, Max
 from rest_framework.exceptions import APIException, ValidationError
 
 from ..models import Task, TaskOrder
@@ -19,9 +19,15 @@ class MoveConflict(APIException):
 
 
 def order_context(project):
-    positions = dict(TaskOrder.objects.filter(task__project=project).values_list("task_id", "position"))
-    rows = list(Task.objects.filter(project=project).order_by("pk").values_list("id", "parent_id", "state_code", "updated_at"))
-    payload = [[pk, parent, state, str(updated), str(positions.get(pk, ""))] for pk, parent, state, updated in rows]
+    rows = list(
+        Task.objects.filter(project=project)
+        .annotate(position=F("manual_order__position"))
+        .order_by("pk")
+        .values_list("id", "parent_id", "state_code", "updated_at", "position")
+    )
+    positions = {pk: position for pk, _, _, _, position in rows if position is not None}
+    payload = [[pk, parent, state, str(updated), "" if position is None else str(position)]
+               for pk, parent, state, updated, position in rows]
     revision = hashlib.sha256(json.dumps(payload, separators=(",", ":")).encode()).hexdigest()
     return positions, revision
 

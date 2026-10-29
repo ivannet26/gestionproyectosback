@@ -648,8 +648,6 @@ class ProjectFlowTests(unittest.TestCase):
             {"priority": 5},
             {"due_date": str(self.today - timedelta(days=1))},
             {"responsible_id": self.worker.worker_id},
-            {"state_code": "EN_CURSO"},
-            {"state_code": "BLOQUEADA"},
             {"requirement_ids": [requirement.pk]},
             {"created_at": "2020-01-01"},
             {"parent_id": 999999},
@@ -660,6 +658,16 @@ class ProjectFlowTests(unittest.TestCase):
                     400,
                 )
                 self.assertFalse(Task.objects.filter(project=project).exists())
+
+    def test_admin_initial_enabled_states_do_not_require_responsible(self):
+        project = self.project()
+        for code in ("EN_CURSO", "BLOQUEADA"):
+            with self.subTest(state=code):
+                response = self.request("post", f"{project.pk}/tasks/", self.task_payload(state_code=code), self.admin)
+                self.assertEqual(response.status_code, 201, response.content)
+                self.assertEqual(response.json()["state_code"], code)
+                self.assertIsNone(response.json()["responsible_id"])
+                self.assertEqual(response.json()["calendar_revision"], "1")
 
     def test_subtask_dates_and_parent_project_are_validated(self):
         project = self.assigned_project()

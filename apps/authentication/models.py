@@ -43,6 +43,8 @@ class User(AbstractBaseUser):
 
     @property
     def global_role(self):
+        if hasattr(self, "_role_code"):
+            return self._role_code
         prefetched = getattr(self, "_prefetched_objects_cache", {}).get("userrole_set")
         roles = (
             {role.role_code for role in prefetched}

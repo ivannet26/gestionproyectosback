@@ -4,14 +4,35 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Case, CharField, Count, Exists, Max, OuterRef, Q, Subquery, Value, When
 from django.utils import timezone
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed, Throttled
 from rest_framework.permissions import BasePermission
 
-from .models import AuthThrottle, AuthToken, User
+from .models import FINAL_ROLES, AuthThrottle, AuthToken, User, UserRole
 from .tokens import InvalidToken, decode_token, digest_token
 from .services.eligibility import account_eligible
+
+
+def role_annotation():
+    roles = (
+        UserRole.objects.filter(user_id=OuterRef("pk"))
+        .values("user_id")
+        .annotate(
+            total=Count("role_code"),
+            allowed=Count("role_code", filter=Q(role_code__in=FINAL_ROLES)),
+        )
+        .annotate(
+            code=Case(
+                When(total=1, allowed=1, then=Max("role_code")),
+                default=Value(None),
+                output_field=CharField(),
+            )
+        )
+        .values("code")[:1]
+    )
+    return Subquery(roles, output_field=CharField())
 
 
 class AccessTokenAuthentication(BaseAuthentication):
@@ -26,20 +47,26 @@ class AccessTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Credenciales no válidas")
         try:
             claims = decode_token(header[7:], "access")
+            token = header[7:]
             user = (
                 User.objects.select_related("worker", "worker__area")
-                .prefetch_related("userrole_set")
+                .annotate(
+                    token_valid=Exists(
+                        AuthToken.objects.filter(
+                            user_id=OuterRef("pk"),
+                            purpose="access",
+                            digest=digest_token(token),
+                            consumed_at__isnull=True,
+                            expires_at__gt=timezone.now(),
+                        )
+                    ),
+                    _role_code=role_annotation(),
+                )
                 .get(pk=int(claims["sub"]))
             )
         except (InvalidToken, User.DoesNotExist, ValueError):
             raise AuthenticationFailed("Credenciales no válidas") from None
-        if not AuthToken.objects.filter(
-            user=user,
-            purpose="access",
-            digest=digest_token(header[7:]),
-            consumed_at__isnull=True,
-            expires_at__gt=timezone.now(),
-        ).exists():
+        if not user.token_valid:
             raise AuthenticationFailed("Credenciales no válidas")
         if not account_eligible(user):
             raise AuthenticationFailed("Cuenta no autorizada")

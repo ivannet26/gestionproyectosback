@@ -5,8 +5,8 @@ from apps.organization.services.areas import active_area_ids
 from ..models import Worker, WorkerArea
 
 
-def eligible_workers(area_ids, search=""):
-    areas = active_area_ids(area_ids)
+def eligible_workers(area_ids, search="", *, assume_active=False):
+    areas = list(area_ids) if assume_active else active_area_ids(area_ids)
     relationships = WorkerArea.objects.filter(worker_id=OuterRef("pk"))
     workers = (
         Worker.objects.filter(active=True, user__is_active=True)
