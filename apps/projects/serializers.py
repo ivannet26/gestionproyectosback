@@ -205,6 +205,7 @@ class ProjectTaskConfigurationSerializer(StrictSerializer):
 
 
 class ProjectListQuerySerializer(ListQuerySerializer):
+    project_id = serializers.IntegerField(min_value=1, required=False)
     area_id = serializers.IntegerField(min_value=1, required=False)
     state_code = serializers.CharField(max_length=20, required=False)
     available = serializers.BooleanField(required=False)

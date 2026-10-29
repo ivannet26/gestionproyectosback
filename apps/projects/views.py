@@ -23,7 +23,7 @@ from .serializers import (
 )
 from .services.access import project_for_user, require_admin, tasks_for_user
 from .services.favorites import set_project_favorite
-from .services.listings import project_page
+from .services.listings import project_area_page, project_page
 from .services.presentation import task_snapshot, task_snapshots
 from .services.projects import create_project, project_snapshot, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
@@ -79,6 +79,13 @@ class ProjectWorkersView(ProjectApiView):
         if len(search) > 100 or len(ids) > 100 or len(set(ids)) != len(ids) or any(value < 1 for value in ids):
             raise ValidationError({"detail": "Filtros no válidos"})
         return Response(worker_candidates(ids, search))
+
+
+class ProjectAreasView(ProjectApiView):
+    def get(self, request):
+        serializer = ProjectListQuerySerializer(data=request.query_params.dict())
+        serializer.is_valid(raise_exception=True)
+        return Response(project_area_page(request.user, serializer.validated_data))
 
 
 class ProjectListView(ProjectApiView):
