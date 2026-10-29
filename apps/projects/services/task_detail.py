@@ -6,7 +6,7 @@ from ..models import TaskDependency, TaskRelation
 from .access import project_for_user, require_admin, task_for_user, tasks_for_user
 from .activity import cursor_value
 from .audit import audit_actor, record_activity
-from .presentation import task_snapshot, task_snapshots
+from .presentation import task_snapshots
 from .statuses import configured_states
 from .tasks import editable_project
 
@@ -15,7 +15,11 @@ def detail_context(user, project_id, task_id):
     project = project_for_user(user, project_id)
     task = task_for_user(user, project, task_id)
     parent = tasks_for_user(user, project).select_related("responsible").filter(pk=task.parent_id).first() if task.parent_id else None
-    return {"task": task_snapshot(task, project, user), "parent": task_snapshot(parent, project, user) if parent else None}
+    snapshots = {
+        item["id"]: item
+        for item in task_snapshots([task] + ([parent] if parent else []), project, user, with_order=False)
+    }
+    return {"task": snapshots[task.pk], "parent": snapshots[parent.pk] if parent else None}
 
 
 def subtask_page(user, project_id, task_id, cursor=0):

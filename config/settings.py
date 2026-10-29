@@ -79,7 +79,8 @@ else:
             "PASSWORD": os.environ["DB_PASSWORD"],
             "HOST": os.environ["DB_HOST"],
             "PORT": os.environ["DB_PORT"],
-            "CONN_MAX_AGE": 0,
+            "CONN_MAX_AGE": None,
+            "CONN_HEALTH_CHECKS": True,
             "OPTIONS": {
                 "charset": "utf8mb4",
                 "ssl_mode": os.environ["DB_SSL_MODE"],

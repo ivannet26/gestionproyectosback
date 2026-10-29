@@ -18,12 +18,17 @@ from .statuses import status_configuration
 
 
 def project_areas(project):
-    return Area.objects.filter(pk=project.area_id)
+    area = getattr(project, "area", None)
+    if area is None:
+        area = Area.objects.filter(pk=project.area_id).first()
+    return [{"id": area.pk, "name": area.name}] if area else []
 
 
 def eligible_project_workers(project):
-    areas = list(project_areas(project).filter(active=True).values_list("pk", flat=True))
-    return eligible_workers(areas) if areas else Worker.objects.none()
+    area = getattr(project, "area", None)
+    if area is None or not area.active:
+        return Worker.objects.none()
+    return eligible_workers([area.pk], assume_active=True)
 
 
 def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=None):
@@ -40,7 +45,7 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         "state_code": project.state_code,
         "available": project.available,
         "has_associated_workers": has_associated_workers,
-        "areas": list(project_areas(project).values("id", "name")) if areas is None else areas,
+        "areas": project_areas(project) if areas is None else areas,
         "worker_edit": project.worker_edit,
         "worker_state": project.worker_state,
         "worker_create": project.worker_create,
@@ -50,8 +55,12 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
         },
     }
     if detailed:
-        from .teams import team_options
-        result["is_favorite"] = ProjectFavorite.objects.filter(project=project, user=user).exists()
+        is_favorite = getattr(project, "is_favorite", None)
+        result["is_favorite"] = (
+            is_favorite
+            if is_favorite is not None
+            else ProjectFavorite.objects.filter(project=project, user=user).exists()
+        )
         members = ProjectMember.objects.filter(project=project, active=True, worker__in=eligible_project_workers(project))
         if not admin:
             members = members.filter(worker_id=user.worker_id)
@@ -60,9 +69,7 @@ def project_snapshot(project, user, detailed=False, *, areas=None, create_tasks=
             for member in members.select_related("worker")
         ]
         result["requirements"] = list(ProjectRequirement.objects.filter(project=project).values("id", "name", "kind"))
-        result["task_states"] = status_configuration(project, user)
-        result["team_ids"] = list(ProjectTeam.objects.filter(project=project).values_list("team_id", flat=True)) if admin else []
-        result["assignment_teams"] = team_options(project.area_id, project=project) if admin else []
+        result["task_states"] = status_configuration(project, user, full=False)
     return result
 
 

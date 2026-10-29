@@ -3,7 +3,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 
 from apps.authentication.services.eligibility import account_eligible
 from apps.workers.services.areas import authorized_areas
-from ..models import Project, ProjectMember, Task, TaskAssignee
+from ..models import Project, ProjectFavorite, ProjectMember, Task, TaskAssignee
 
 
 def require_admin(user):
@@ -50,9 +50,14 @@ def visible_projects(user):
 
 
 def project_for_user(user, project_id, lock=False):
-    queryset = visible_projects(user)
+    queryset = visible_projects(user).annotate(
+        is_favorite=Exists(ProjectFavorite.objects.filter(project_id=OuterRef("pk"), user=user)),
+        has_associated_workers=Exists(ProjectMember.objects.filter(project_id=OuterRef("pk"), active=True)),
+    )
     if lock:
         queryset = queryset.select_for_update()
+    else:
+        queryset = queryset.select_related("area")
     project = queryset.filter(pk=project_id).first()
     if project is None:
         raise NotFound("Proyecto no disponible")

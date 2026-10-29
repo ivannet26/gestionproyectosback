@@ -7,7 +7,6 @@ from datetime import datetime, time, timedelta, timezone as utc_timezone
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
 
 from .models import AuthToken
@@ -104,22 +103,20 @@ def issue_stored(user, purpose, expires_at, revoke_previous=False):
 
 def consume_stored(token, purpose, *, user=None):
     claims = decode_token(token, purpose)
-    with transaction.atomic():
-        record = (
-            AuthToken.objects.select_for_update()
-            .filter(digest=digest_token(token), purpose=purpose, user_id=int(claims["sub"]))
-            .first()
-        )
-        if (
-            record is None
-            or record.consumed_at is not None
-            or record.expires_at <= timezone.now()
-            or (user is not None and user.pk != record.user_id)
-        ):
-            raise InvalidToken
-        record.consumed_at = timezone.now()
-        record.save(update_fields=["consumed_at"])
-        return (user if user is not None else record.user), record.expires_at
+    user_id = int(claims["sub"])
+    if user is not None and user.pk != user_id:
+        raise InvalidToken
+    now = timezone.now()
+    consumed = AuthToken.objects.filter(
+        digest=digest_token(token),
+        purpose=purpose,
+        user_id=user_id,
+        consumed_at__isnull=True,
+        expires_at__gt=now,
+    ).update(consumed_at=now)
+    if not consumed:
+        raise InvalidToken
+    return (user if user is not None else user_id), datetime.fromtimestamp(claims["exp"], tz=utc_timezone.utc)
 
 
 def inspect_stored(token, purpose):

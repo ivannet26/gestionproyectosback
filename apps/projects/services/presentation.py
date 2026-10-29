@@ -1,20 +1,20 @@
 from collections import defaultdict
 from django.db.models import Q
-from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel
 from .statuses import configured_states
-from .state_categories import definition_rules
 
 
-def task_snapshots(tasks, project, user):
+def task_snapshots(tasks, project, user, *, with_order=True):
     from .ordering import order_context
-    from .tasks import transition_context, validate_transition
     tasks = list(tasks)
     if not tasks:
         return []
-    positions, move_revision = order_context(project)
-    tasks.sort(key=lambda task: (positions.get(task.pk) is None, positions.get(task.pk, 0), task.pk))
+    if with_order:
+        positions, move_revision = order_context(project)
+        tasks.sort(key=lambda task: (positions.get(task.pk) is None, positions.get(task.pk, 0), task.pk))
+    else:
+        positions, move_revision = {}, None
     admin = user.global_role == "ADMINISTRADOR"
     terminal = project.state_code in ("FINALIZADO", "CANCELADO")
     manageable = admin and not terminal
@@ -28,7 +28,6 @@ def task_snapshots(tasks, project, user):
         )
     )
     member = membership is not None
-    supervision = admin or (member and membership["project_role"] in ("RESPONSABLE", "REVISOR"))
     can_create = not terminal and (
         admin
         or (user.global_role == "TRABAJADOR" and project.worker_create and member and membership["worker__active"])
@@ -36,8 +35,6 @@ def task_snapshots(tasks, project, user):
     definitions = configured_states(project)
     states = {state["code"]: state["name"] for state in definitions}
     metadata = {state["code"]: state for state in definitions}
-    rules = definition_rules(project)
-    legacy = {}
     transitions_by_state = defaultdict(list)
     for source in {task.state_code for task in tasks}:
         for target in states:
@@ -83,19 +80,11 @@ def task_snapshots(tasks, project, user):
     for snapshot in snapshots:
         snapshot["move_revision"] = move_revision
         snapshot["manual_position"] = str(positions[snapshot["id"]]) if snapshot["id"] in positions else None
-    if any(item["permissions"]["state"] for item in snapshots):
-        context = transition_context(user, project, definitions, rules, legacy, supervision, preview=True)
-        by_id = {task.pk: task for task in tasks}
-        for snapshot in snapshots:
-            snapshot["move_targets"] = []
-            for target in states if snapshot["permissions"]["state"] else []:
-                if target == snapshot["state_code"]:
-                    continue
-                try:
-                    validate_transition(user, project, by_id[snapshot["id"]], target, "", context, direct=True)
-                except (PermissionDenied, ValidationError):
-                    continue
-                snapshot["move_targets"].append(target)
+        snapshot["move_targets"] = (
+            [target for target in states if target != snapshot["state_code"]]
+            if snapshot["permissions"]["state"]
+            else []
+        )
     return snapshots
 
 
