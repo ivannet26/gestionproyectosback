@@ -11,6 +11,7 @@ from apps.organization.models import Specialty
 from .serializers import (
     DependencySerializer,
     ProjectCreateSerializer,
+    ProjectListQuerySerializer,
     ProjectFavoriteSerializer,
     ProjectTaskConfigurationSerializer,
     TaskCreateSerializer,
@@ -20,10 +21,11 @@ from .serializers import (
     TaskRelationSerializer,
     TaskMoveSerializer,
 )
-from .services.access import project_for_user, require_admin, tasks_for_user, visible_projects
+from .services.access import project_for_user, require_admin, tasks_for_user
 from .services.favorites import set_project_favorite
+from .services.listings import project_page
 from .services.presentation import task_snapshot, task_snapshots
-from .services.projects import create_project, project_snapshot, project_snapshots, worker_candidates
+from .services.projects import create_project, project_snapshot, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
 from .services.statuses import catalog_states, configure_task_states, status_configuration
 from .services.state_templates import project_templates, save_template
@@ -83,7 +85,9 @@ class ProjectListView(ProjectApiView):
     serializer_class = ProjectCreateSerializer
 
     def get(self, request):
-        return Response(project_snapshots(visible_projects(request.user).order_by("-id")[:200], request.user))
+        serializer = ProjectListQuerySerializer(data=request.query_params.dict())
+        serializer.is_valid(raise_exception=True)
+        return Response(project_page(request.user, serializer.validated_data))
 
     def post(self, request):
         require_admin(request.user)
@@ -196,7 +200,10 @@ class TaskDetailView(ProjectApiView):
         serializer = TaskEditSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         task = edit_task(request.user, project_id, task_id, serializer.validated_data)
-        return Response(task_snapshot(task, task.project, request.user))
+        snapshot = task_snapshot(task, task.project, request.user)
+        if hasattr(task, "calendar_receipt"):
+            snapshot["calendar_receipt"] = task.calendar_receipt
+        return Response(snapshot)
 
 
 class TaskStateView(ProjectApiView):

@@ -120,6 +120,7 @@ def task_snapshot_from_context(
         "updated_at": task.updated_at,
         "start_date": task.start_date,
         "due_date": task.due_date,
+        "calendar_revision": str(task.calendar_revision),
         "estimated_minutes": task.estimated_minutes,
         "responsible_id": task.responsible_id,
         "responsible_name": f"{task.responsible.first_names} {task.responsible.last_names}"
