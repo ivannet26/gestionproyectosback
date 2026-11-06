@@ -91,6 +91,10 @@ def prepare(fixture, credentials):
             from .gantt_content_fixture import prepare_content
             prepare_content(fixture, credentials)
 
+    if os.environ.get("GM_GANTT_TIMELINE") == "1":
+        from .gantt_timeline_fixture import prepare_timeline
+        prepare_timeline(fixture, credentials)
+
     if os.environ.get("GM_GANTT_HIERARCHY") == "1":
         from .gantt_hierarchy_fixture import prepare_hierarchy
         prepare_hierarchy(fixture, credentials)
