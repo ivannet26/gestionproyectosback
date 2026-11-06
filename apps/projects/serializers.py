@@ -142,8 +142,17 @@ class TaskStateSerializer(StrictSerializer):
 
 
 class TaskMoveSerializer(TaskStateSerializer):
+    mode = serializers.ChoiceField(choices=("state", "hierarchy"), default="state")
+    parent_id = serializers.IntegerField(min_value=1, allow_null=True, required=False)
     before_id = serializers.IntegerField(min_value=1, allow_null=True)
     expected_revision = serializers.CharField(min_length=64, max_length=64)
+
+    def validate(self, attrs):
+        if attrs["mode"] == "hierarchy" and "parent_id" not in attrs:
+            raise serializers.ValidationError({"parent_id": "Indica el padre de destino"})
+        if attrs["mode"] == "state" and "parent_id" in attrs:
+            raise serializers.ValidationError({"parent_id": "El movimiento por estado conserva el padre"})
+        return attrs
 
 
 class DependencySerializer(StrictSerializer):
