@@ -248,13 +248,21 @@ class TaskDependenciesView(ProjectApiView):
     serializer_class = DependencySerializer
 
     def post(self, request, project_id, task_id):
-        serializer = DependencySerializer(data=request.data)
+        serializer = DependencySerializer(data=request.data, context={"method": request.method})
         serializer.is_valid(raise_exception=True)
-        manage_dependency(request.user, project_id, task_id, serializer.validated_data["predecessor_id"])
+        manage_dependency(request.user, project_id, task_id, serializer.validated_data["predecessor_id"], dependency_type=serializer.validated_data["dependency_type"])
         return Response({"detail": "Dependencia agregada"}, status=201)
 
+    def patch(self, request, project_id, task_id):
+        serializer = DependencySerializer(data=request.data, context={"method": request.method})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        manage_dependency(request.user, project_id, task_id, data["predecessor_id"],
+                          dependency_type=data["dependency_type"], replace=True, expected_type=data["expected_type"])
+        return Response({"detail": "Tipo de dependencia actualizado"})
+
     def delete(self, request, project_id, task_id):
-        serializer = DependencySerializer(data=request.data)
+        serializer = DependencySerializer(data=request.data, context={"method": request.method})
         serializer.is_valid(raise_exception=True)
         manage_dependency(request.user, project_id, task_id, serializer.validated_data["predecessor_id"], remove=True)
         return Response(status=204)
