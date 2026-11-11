@@ -83,7 +83,7 @@ def relation_page(user, project_id, task_id, cursor=0):
             target = edge.successor if edge.predecessor_id == task.pk else edge.predecessor
             items.append({"id": f"dep:{edge.predecessor_id}:{edge.successor_id}", "kind": "blocks" if edge.predecessor_id == task.pk else "blocked_by",
                           "name": "", "target_id": target.pk, "target_name": target.name,
-                          "predecessor_id": edge.predecessor_id, "successor_id": edge.successor_id})
+                          "predecessor_id": edge.predecessor_id, "successor_id": edge.successor_id, "dependency_type": edge.dependency_type, "legacy": edge.dependency_type is None})
     remaining = 31 - len(items)
     if remaining > 0:
         start = max(0, cursor - dependency_count)

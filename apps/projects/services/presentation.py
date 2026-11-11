@@ -3,6 +3,7 @@ from django.db.models import Q
 
 from ..models import ProjectMember, TaskAssignee, TaskDependency, TaskLabel
 from .statuses import configured_states
+from .scheduling import dependency_contract, schedule_value
 
 
 def task_snapshots(tasks, project, user, *, with_order=True):
@@ -63,8 +64,10 @@ def task_snapshots(tasks, project, user, *, with_order=True):
             | Q(predecessor_id__in=TaskAssignee.objects.filter(worker_id=user.worker_id).values("task_id"))
         )
     dependencies_by_task = defaultdict(list)
-    for successor_id, predecessor_id in dependencies.values_list("successor_id", "predecessor_id"):
-        dependencies_by_task[successor_id].append(predecessor_id)
+    links_by_task = defaultdict(list)
+    for edge in dependencies:
+        dependencies_by_task[edge.successor_id].append(edge.predecessor_id)
+        links_by_task[edge.successor_id].append(dependency_contract(edge))
     snapshots = [
         task_snapshot_from_context(
             task, user, states, labels[task.pk], dependencies_by_task[task.pk],
@@ -76,6 +79,7 @@ def task_snapshots(tasks, project, user, *, with_order=True):
         for task in tasks
     ]
     for snapshot in snapshots:
+        snapshot["dependency_links"] = links_by_task[snapshot["id"]]
         snapshot["move_revision"] = move_revision
         snapshot["manual_position"] = str(positions[snapshot["id"]]) if snapshot["id"] in positions else None
         snapshot["move_targets"] = (
@@ -109,6 +113,8 @@ def task_snapshot_from_context(
         "start_date": task.start_date,
         "due_date": task.due_date,
         "calendar_revision": str(task.calendar_revision),
+        "schedule": schedule_value(task),
+        "execution": {"started_at": task.actual_started_at, "finished_at": task.actual_finished_at, "historical_unknown": task.actual_started_at is None and metadata.get("category") != "not_started" and task.state_code not in ("PENDIENTE", "BLOQUEADA", "CANCELADA")},
         "estimated_minutes": task.estimated_minutes,
         "responsible_id": task.responsible_id,
         "responsible_name": f"{task.responsible.first_names} {task.responsible.last_names}"
