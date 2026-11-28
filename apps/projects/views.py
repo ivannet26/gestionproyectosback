@@ -11,6 +11,13 @@ from apps.organization.models import Specialty
 
 from .serializers import (
     DependencySerializer,
+    MyWorkPrioritiesQuerySerializer,
+    MyWorkPrioritiesResponseSerializer,
+    MyWorkSummaryResponseSerializer,
+    MyWorkTasksQuerySerializer,
+    MyWorkTasksResponseSerializer,
+    MyWorkUpcomingQuerySerializer,
+    MyWorkUpcomingResponseSerializer,
     ProjectCreateSerializer,
     ProjectListQuerySerializer,
     ProjectFavoriteSerializer,
@@ -34,6 +41,7 @@ from .services.charts import project_chart_data
 from .services.dependency_undo import issue_undo
 from .services.favorites import set_project_favorite
 from .services.listings import project_area_page, project_page
+from .services.my_work import my_work_page, my_work_priorities, my_work_summary, my_work_upcoming
 from .services.presentation import task_snapshot, task_snapshots
 from .services.projects import add_project_participants, create_project, project_snapshot, set_project_member_role, worker_candidates
 from .services.tasks import change_task_state, create_task, edit_task, manage_dependency
@@ -380,3 +388,35 @@ class TaskRelationView(ProjectApiView):
     def delete(self, request, project_id, task_id, relation_id):
         manage_relation(request.user, project_id, task_id, relation_id=relation_id)
         return Response(status=204)
+
+
+class MyWorkSummaryView(ProjectApiView):
+    @extend_schema(responses={200: MyWorkSummaryResponseSerializer})
+    def get(self, request):
+        return Response(my_work_summary(request.user))
+
+
+class MyWorkTasksView(ProjectApiView):
+    @extend_schema(parameters=[MyWorkTasksQuerySerializer], responses={200: MyWorkTasksResponseSerializer})
+    def get(self, request):
+        serializer = MyWorkTasksQuerySerializer(data=request.query_params.dict())
+        serializer.is_valid(raise_exception=True)
+        return Response(my_work_page(request.user, serializer.validated_data))
+
+
+class MyWorkUpcomingView(ProjectApiView):
+    @extend_schema(parameters=[MyWorkUpcomingQuerySerializer], responses={200: MyWorkUpcomingResponseSerializer})
+    def get(self, request):
+        serializer = MyWorkUpcomingQuerySerializer(data=request.query_params.dict())
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        return Response(my_work_upcoming(request.user, data["days"], data["limit"]))
+
+
+class MyWorkPrioritiesView(ProjectApiView):
+    @extend_schema(parameters=[MyWorkPrioritiesQuerySerializer], responses={200: MyWorkPrioritiesResponseSerializer})
+    def get(self, request):
+        serializer = MyWorkPrioritiesQuerySerializer(data=request.query_params.dict())
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        return Response(my_work_priorities(request.user, data["priority"], data["limit"]))

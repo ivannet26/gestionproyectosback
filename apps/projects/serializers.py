@@ -6,6 +6,8 @@ from rest_framework import serializers
 from apps.authentication.serializers import StrictSerializer
 from apps.pagination import ListQuerySerializer
 
+from .services.state_categories import CATEGORIES
+
 
 class ProjectFavoriteSerializer(StrictSerializer):
     is_favorite = serializers.BooleanField()
@@ -399,3 +401,108 @@ class ProjectMetricsResponseSerializer(StrictSerializer):
     summary = ProjectSummarySerializer()
     charts = ProjectChartsSerializer(required=False)
     tables = ProjectTablesSerializer(required=False)
+
+
+class MyWorkItemSerializer(StrictSerializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField(max_length=180)
+    project_id = serializers.IntegerField()
+    project_name = serializers.CharField(max_length=180)
+    state_code = serializers.CharField(max_length=20)
+    state_name = serializers.CharField(max_length=70)
+    state_category = serializers.CharField(max_length=20, allow_null=True, allow_blank=True)
+    priority = serializers.IntegerField(allow_null=True)
+    priority_name = serializers.CharField(max_length=20)
+    start_date = serializers.DateField(allow_null=True)
+    due_date = serializers.DateField(allow_null=True)
+    overdue = serializers.BooleanField()
+    progress = serializers.FloatField()
+    responsible_id = serializers.IntegerField(allow_null=True)
+    responsible_name = serializers.CharField(max_length=225, allow_null=True, allow_blank=True)
+    updated_at = serializers.DateTimeField()
+
+
+class MyWorkCountsSerializer(StrictSerializer):
+    total = serializers.IntegerField(min_value=0)
+    overdue = serializers.IntegerField(min_value=0)
+    due_today = serializers.IntegerField(min_value=0)
+    due_week = serializers.IntegerField(min_value=0)
+    not_started = serializers.IntegerField(min_value=0)
+    active = serializers.IntegerField(min_value=0)
+    done = serializers.IntegerField(min_value=0)
+    closed = serializers.IntegerField(min_value=0)
+
+
+class MyWorkPriorityCountSerializer(StrictSerializer):
+    code = serializers.IntegerField()
+    name = serializers.CharField(max_length=20)
+    total = serializers.IntegerField(min_value=0)
+    pending = serializers.IntegerField(min_value=0)
+
+
+class MyWorkSummaryResponseSerializer(StrictSerializer):
+    counts = MyWorkCountsSerializer()
+    priorities = MyWorkPriorityCountSerializer(many=True)
+    recent = MyWorkItemSerializer(many=True)
+    priority_tasks = MyWorkItemSerializer(many=True)
+
+
+class MyWorkTasksQuerySerializer(ListQuerySerializer):
+    project_id = serializers.IntegerField(min_value=1, required=False)
+    priority = serializers.IntegerField(min_value=1, max_value=4, required=False)
+    state_category = serializers.CharField(max_length=60, required=False, allow_blank=True, default="")
+    due = serializers.ChoiceField(choices=("any", "overdue", "today", "week", "none"), required=False, default="any")
+
+    def validate_state_category(self, value):
+        codes = [code for code in value.split(",") if code]
+        if not codes:
+            return None
+        if len(codes) > len(CATEGORIES) or len(set(codes)) != len(codes) or any(
+            code not in CATEGORIES for code in codes
+        ):
+            raise serializers.ValidationError("Selecciona categorías válidas sin duplicados")
+        return codes
+
+
+class MyWorkTasksResponseSerializer(StrictSerializer):
+    results = MyWorkItemSerializer(many=True)
+    total = serializers.IntegerField(min_value=0)
+    cursor = serializers.CharField()
+    next_cursor = serializers.CharField(allow_null=True, allow_blank=True)
+
+
+class MyWorkUpcomingQuerySerializer(StrictSerializer):
+    days = serializers.IntegerField(min_value=1, max_value=90, required=False, default=14)
+    limit = serializers.IntegerField(min_value=1, max_value=100, required=False, default=30)
+
+
+class MyWorkRangeSerializer(StrictSerializer):
+    start = serializers.DateField()
+    end = serializers.DateField()
+
+
+class MyWorkUpcomingResponseSerializer(StrictSerializer):
+    range = MyWorkRangeSerializer()
+    overdue = MyWorkItemSerializer(many=True)
+    upcoming = MyWorkItemSerializer(many=True)
+
+
+class MyWorkPrioritiesQuerySerializer(StrictSerializer):
+    priority = serializers.CharField(max_length=20, required=False, allow_blank=True, default="1,2")
+    limit = serializers.IntegerField(min_value=1, max_value=50, required=False, default=20)
+
+    def validate_priority(self, value):
+        codes = [code for code in value.split(",") if code]
+        if not codes:
+            return [1, 2]
+        try:
+            parsed = [int(code) for code in codes]
+        except ValueError:
+            raise serializers.ValidationError("Selecciona prioridades válidas") from None
+        if len(parsed) > 4 or len(set(parsed)) != len(parsed) or any(code not in (1, 2, 3, 4) for code in parsed):
+            raise serializers.ValidationError("Selecciona prioridades válidas sin duplicados")
+        return parsed
+
+
+class MyWorkPrioritiesResponseSerializer(StrictSerializer):
+    tasks = MyWorkItemSerializer(many=True)
